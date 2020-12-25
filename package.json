@@ -4,7 +4,9 @@
   "description": "Matrix data structure on level-db",
   "main": "index.js",
   "scripts": {
-    "test": "test"
+    "test": "test",
+    "redis" : "docker run --name matrix-redis  -itd --rm redis:latest",
+    "rediscli": "docker exec -it matrix-redis redis-cli"
   },
   "repository": {
     "type": "git",

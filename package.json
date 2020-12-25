@@ -1,0 +1,25 @@
+{
+  "name": "level-matrix",
+  "version": "0.0.1",
+  "description": "Matrix data structure on level-db",
+  "main": "index.js",
+  "scripts": {
+    "test": "test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LRagji/level-matrix.git"
+  },
+  "keywords": [
+    "matrix",
+    "level-db",
+    "leveldb",
+    "timeseries"
+  ],
+  "author": "Laukik",
+  "license": "SEE LICENSE IN license.md",
+  "bugs": {
+    "url": "https://github.com/LRagji/level-matrix/issues"
+  },
+  "homepage": "https://github.com/LRagji/level-matrix#readme"
+}

@@ -1,24 +1,25 @@
-class Matrix {
+module.exports = class Matrix {
 
     #partitionHeight;
     #partitionWidth;
-    #partitions = new Map();
-    #dbDirectory;
+    #leveldbFactory
+    #options = { keyEncoding: 'binary', valueEncoding: 'json' };
 
-    constructor(dbDirectory, partitionWidth = 86400000n, partitionHeight = 1000n) {
+    constructor(leveldbResolver, partitionWidth = 86400000n, partitionHeight = 1000n) {
         this.#partitionWidth = partitionWidth;
         this.#partitionHeight = partitionHeight;
-        this.#dbDirectory = dbDirectory;
+        this.#leveldbFactory = leveldbResolver;
 
         this.batchPut = this.batchPut.bind(this);
         this.computePartitionKeyWithCellNumber = this.computePartitionKeyWithCellNumber.bind(this);
         this.bigIntCeil = this.bigIntCeil.bind(this);
-        this.bigIntMin = this.bigIntMin.bind(this);
     }
 
-    async batchPut(data, dimensions = 2n) //x,y,data
+    async batchPut(data, dimensions = 2) //x,y,data
     {
-        if (dimensions !== 2n) throw new Error("Current version only supports 2 dimensions");
+        if (dimensions !== 2) throw new Error("Current version only supports 2 dimensions");
+        if (data == null || data.length === 0 || (data.length % (dimensions+1) !== 0)) throw new Error("Data cannot be empty and should be multiple of the dimensions defined.");
+        dimensions = BigInt(dimensions);
 
         const opertationsAndDBMap = new Map();
         for (let index = 0n; index < data.length; index += (dimensions + 1n)) {
@@ -35,22 +36,18 @@ class Matrix {
         }
 
         const operationsPromises = [];
-        opertationsAndDBMap.forEach((operations, partitionKey) => {
-            if (!this.#partitions.has(partitionKey)) {
-                this.#partitions.set(partitionKey, level(path.join(this.#dbDirectory, partitionKey), { keyEncoding: 'binary', valueEncoding: 'json' }));
-            }
-            operationsPromises.push(this.#partitions.get(partitionKey).batch(operations));
-        });
-
+        const partititons = Array.from(opertationsAndDBMap.keys());
+        for (let index = 0; index < partititons.length; index++) {
+            const partitionKey = partititons[index];
+            const operations = opertationsAndDBMap.get(partitionKey);
+            const dbInstance = await this.#leveldbFactory(partitionKey, this.#options)
+            operationsPromises.push(dbInstance.batch(operations));
+        }
         return Promise.all(operationsPromises)
     }
 
     bigIntCeil(a, b) {
         return a % b === 0n ? a / b : (a / b) + 1n;
-    }
-
-    bigIntMin(a, b) {
-        return a < b ? a : b;
     }
 
     computePartitionKeyWithCellNumber(x, y) {
@@ -103,10 +100,11 @@ class Matrix {
 
         let promises = [];
         const alias = { height: this.#partitionHeight, width: this.#partitionWidth, bigIntCeil: this.bigIntCeil };
-        rangeQueries.forEach((query, partitionKey) => {
-            if (!this.#partitions.has(partitionKey)) {
-                this.#partitions.set(partitionKey, level(path.join(this.#dbDirectory, partitionKey), { keyEncoding: 'binary', valueEncoding: 'json' }));
-            }
+        const partititons = Array.from(rangeQueries.keys());
+        for (let index = 0; index < partititons.length; index++) {
+            const partitionKey = partititons[index];
+            const query = rangeQueries.get(partitionKey);
+            const dbInstance = await this.#leveldbFactory(partitionKey, this.#options)
             //console.log(`${partitionKey} : ${JSONBigIntNativeParser.stringify(query)}`);
             promises.push(new Promise((complete, reject) => {
                 let completed = false;
@@ -117,7 +115,7 @@ class Matrix {
                 const endKeyBuffer = Buffer.allocUnsafe(8);
                 startKeyBuffer.writeBigInt64BE(query.start, 0);
                 endKeyBuffer.writeBigInt64BE(query.end, 0);
-                this.#partitions.get(partitionKey).createReadStream({ gte: startKeyBuffer, lte: endKeyBuffer })
+                dbInstance.createReadStream({ gte: startKeyBuffer, lte: endKeyBuffer })
                     //this.#partitions.get(partitionKey).createReadStream({ gte: 3, lte: 3 })
                     .on('data', function (data) {
                         //console.log(partitionKey + ": " + data.key, '=', data.value)
@@ -147,7 +145,7 @@ class Matrix {
                         };
                     })
             }));
-        });
+        };
 
         let results = await Promise.all(promises);
 

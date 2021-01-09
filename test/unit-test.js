@@ -16,10 +16,10 @@ assert.rejected = async (fn) => {
     return error;
 }
 let mockDbInstance = {
-    batch=sinon.fake().resolves(),
-    createReadStream=sinon.fake()
+    batch: sinon.fake.resolves(),
+    createReadStream: sinon.fake()
 };
-let mockResolver = sinon.fake.resolves(levelDbInstance);
+let mockResolver = sinon.fake.resolves(mockDbInstance);
 
 describe('level-matrix', function () {
 
@@ -54,8 +54,15 @@ describe('level-matrix', function () {
 
         it('should calculate correct partition and normal data.', async function () {
             const X = 5n, Y = 5n, Value = 23;
+            const expectedPartitionKey='1-1';
+            const expectedOptions={keyEncoding: 'binary', valueEncoding: 'json'};
+            const keyBuffer = Buffer.allocUnsafe(8);
+
+            keyBuffer.writeBigInt64BE(computeResult.cell, 0);
+            const expectedOperation={ type: "put", key: keyBuffer, value: Value }
             await MatrixUnderTest.batchPut([X, Y, Value], 2);
-            console.log(mockResolver.called);
+            assert.isTrue(mockResolver.calledOnceWith(expectedPartitionKey,expectedOptions));
+            //mockDbInstance.batch.calledOnceWith()
         });
     });
 });

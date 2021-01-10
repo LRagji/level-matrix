@@ -229,7 +229,7 @@ describe('level-matrix', function () {
 
         });
 
-        //2st Partition
+        //2nd Partition
         it('should work with 1 dimension within left edge of second partition', async function () {
             //Setup
             const dimensionName = 'X';
@@ -323,7 +323,7 @@ describe('level-matrix', function () {
         });
 
         //General validation for 1 Dimension
-        it('Parameter "data" should allow dimension indexes less than 18446744073709551615', async function () {
+        it('Parameter "data" should not allow dimension indexes less than 18446744073709551615', async function () {
             //Setup
             const dimensionName = 'X';
             const defaultAttributeName = 'data';
@@ -336,7 +336,220 @@ describe('level-matrix', function () {
             let error = await assert.rejected(async () => await oneDimensionMatrix.batchPut([new Map([[dimensionName, X], [defaultAttributeName, Value]])]));
 
             //Expectations
-            assert.equal(error.message, `Cannot calculate address: Invalid cordinate for "${dimensionName}" dimension, value (${X}) has to be between 0 to 18446744073709551615.`, "Should not accept indexes less than 1.");
+            assert.equal(error.message, `Cannot calculate address: Invalid cordinate for "${dimensionName}" dimension, value (${X}) has to be between 0 to 18446744073709551615.`);
+            sinon.assert.notCalled(mockResolver);
+            sinon.assert.notCalled(mockDbInstance.batch);
+        });
+
+    });
+
+    describe('#batchPut 2 Dimension', function () {
+
+        //1st Partition
+        it('should work with 2 dimension within left edge of first partition', async function () {
+            //Setup
+            const dimensionNameX = 'X';
+            const dimensionNameY = 'Y';
+            const defaultAttributeName = 'data';
+            const partitionSizeOfDimension = 10;
+            const X = 0n;
+            const Y = 0n;
+            const Value = "Left Egde";
+            const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
+            const expectedPartitionKey = `${(X / BigInt(partitionSizeOfDimension)).toString()}-${(Y / BigInt(partitionSizeOfDimension)).toString()}`;
+            const expectedOptions = { keyEncoding: 'binary', valueEncoding: 'json' };
+            const keyBuffer = Buffer.allocUnsafe(8);
+            const relativeAddX = BigInt(X) - ((X / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
+            const relativeAddY = BigInt(Y) - ((Y / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
+            keyBuffer.writeBigInt64BE((BigInt(partitionSizeOfDimension) * relativeAddY) + relativeAddX, 0);
+            const expectedOperation = { type: "put", key: keyBuffer, value: Value }
+
+            //Invoke
+            await Matrix.batchPut([new Map([[dimensionNameX, X], [dimensionNameY, Y], [defaultAttributeName, Value]])]);
+
+            //Expectations
+            sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
+            sinon.assert.calledOnceWithExactly(mockDbInstance.batch, [expectedOperation]);
+        });
+
+        it('should work with 2 dimension within middle of first partition', async function () {
+            //Setup
+            const dimensionNameX = 'X';
+            const dimensionNameY = 'Y';
+            const defaultAttributeName = 'data';
+            const partitionSizeOfDimension = 10;
+            const X = 5n;
+            const Y = 5n;
+            const Value = "Middle";
+            const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
+            const expectedPartitionKey = `${(X / BigInt(partitionSizeOfDimension)).toString()}-${(Y / BigInt(partitionSizeOfDimension)).toString()}`;
+            const expectedOptions = { keyEncoding: 'binary', valueEncoding: 'json' };
+            const keyBuffer = Buffer.allocUnsafe(8);
+            const relativeAddX = BigInt(X) - ((X / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
+            const relativeAddY = BigInt(Y) - ((Y / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
+            keyBuffer.writeBigInt64BE((BigInt(partitionSizeOfDimension) * relativeAddY) + relativeAddX, 0);
+            const expectedOperation = { type: "put", key: keyBuffer, value: Value }
+
+            //Invoke
+            await Matrix.batchPut([new Map([[dimensionNameX, X], [dimensionNameY, Y], [defaultAttributeName, Value]])]);
+
+            //Expectations
+            sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
+            sinon.assert.calledOnceWithExactly(mockDbInstance.batch, [expectedOperation]);
+        });
+
+        it('should work with 2 dimension within right edge of first partition', async function () {
+            //Setup
+            const dimensionNameX = 'X';
+            const dimensionNameY = 'Y';
+            const defaultAttributeName = 'data';
+            const partitionSizeOfDimension = 10n;
+            const X = partitionSizeOfDimension - 1n;
+            const Y = partitionSizeOfDimension - 1n;
+            const Value = "Right Egde";
+            const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
+            const expectedPartitionKey = `${(X / BigInt(partitionSizeOfDimension)).toString()}-${(Y / BigInt(partitionSizeOfDimension)).toString()}`;
+            const expectedOptions = { keyEncoding: 'binary', valueEncoding: 'json' };
+            const keyBuffer = Buffer.allocUnsafe(8);
+            const relativeAddX = BigInt(X) - ((X / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
+            const relativeAddY = BigInt(Y) - ((Y / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
+            keyBuffer.writeBigInt64BE((BigInt(partitionSizeOfDimension) * relativeAddY) + relativeAddX, 0);
+            const expectedOperation = { type: "put", key: keyBuffer, value: Value }
+
+            //Invoke
+            await Matrix.batchPut([new Map([[dimensionNameX, X], [dimensionNameY, Y], [defaultAttributeName, Value]])]);
+
+            //Expectations
+            sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
+            sinon.assert.calledOnceWithExactly(mockDbInstance.batch, [expectedOperation]);
+
+        });
+
+        //2nd Partition
+        it('should work with 2 dimension within left edge of second partition', async function () {
+            //Setup
+            const dimensionNameX = 'X';
+            const dimensionNameY = 'Y';
+            const defaultAttributeName = 'data';
+            const partitionSizeOfDimension = 10n;
+            const X = partitionSizeOfDimension;
+            const Y = partitionSizeOfDimension;
+            const Value = "Left Egde";
+            const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
+            const expectedPartitionKey = `${(X / BigInt(partitionSizeOfDimension)).toString()}-${(Y / BigInt(partitionSizeOfDimension)).toString()}`;
+            const expectedOptions = { keyEncoding: 'binary', valueEncoding: 'json' };
+            const keyBuffer = Buffer.allocUnsafe(8);
+            const relativeAddX = BigInt(X) - ((X / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
+            const relativeAddY = BigInt(Y) - ((Y / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
+            keyBuffer.writeBigInt64BE((BigInt(partitionSizeOfDimension) * relativeAddY) + relativeAddX, 0);
+            const expectedOperation = { type: "put", key: keyBuffer, value: Value }
+
+            //Invoke
+            await Matrix.batchPut([new Map([[dimensionNameX, X], [dimensionNameY, Y], [defaultAttributeName, Value]])]);
+
+            //Expectations
+            sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
+            sinon.assert.calledOnceWithExactly(mockDbInstance.batch, [expectedOperation]);
+        });
+
+        it('should work with 2 dimension within middle of second partition', async function () {
+            //Setup
+            const dimensionNameX = 'X';
+            const dimensionNameY = 'Y';
+            const defaultAttributeName = 'data';
+            const partitionSizeOfDimension = 10n;
+            const X = partitionSizeOfDimension + 2n;
+            const Y = partitionSizeOfDimension + 3n;
+            const Value = "Middle Egde";
+            const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
+            const expectedPartitionKey = `${(X / BigInt(partitionSizeOfDimension)).toString()}-${(Y / BigInt(partitionSizeOfDimension)).toString()}`;
+            const expectedOptions = { keyEncoding: 'binary', valueEncoding: 'json' };
+            const keyBuffer = Buffer.allocUnsafe(8);
+            const relativeAddX = BigInt(X) - ((X / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
+            const relativeAddY = BigInt(Y) - ((Y / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
+            keyBuffer.writeBigInt64BE((BigInt(partitionSizeOfDimension) * relativeAddY) + relativeAddX, 0);
+            const expectedOperation = { type: "put", key: keyBuffer, value: Value }
+
+            //Invoke
+            await Matrix.batchPut([new Map([[dimensionNameX, X], [dimensionNameY, Y], [defaultAttributeName, Value]])]);
+
+            //Expectations
+            sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
+            sinon.assert.calledOnceWithExactly(mockDbInstance.batch, [expectedOperation]);
+
+        });
+
+        it('should work with 1 dimension within right edge of second partition', async function () {
+            //Setup
+            const dimensionNameX = 'X';
+            const dimensionNameY = 'Y';
+            const defaultAttributeName = 'data';
+            const partitionSizeOfDimension = 10n;
+            const X = (partitionSizeOfDimension * 2n) - 1n;
+            const Y = (partitionSizeOfDimension * 2n) - 1n;
+            const Value = "Right Egde";
+            const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
+            const expectedPartitionKey = `${(X / BigInt(partitionSizeOfDimension)).toString()}-${(Y / BigInt(partitionSizeOfDimension)).toString()}`;
+            const expectedOptions = { keyEncoding: 'binary', valueEncoding: 'json' };
+            const keyBuffer = Buffer.allocUnsafe(8);
+            const relativeAddX = BigInt(X) - ((X / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
+            const relativeAddY = BigInt(Y) - ((Y / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
+            keyBuffer.writeBigInt64BE((BigInt(partitionSizeOfDimension) * relativeAddY) + relativeAddX, 0);
+            const expectedOperation = { type: "put", key: keyBuffer, value: Value }
+
+            //Invoke
+            await Matrix.batchPut([new Map([[dimensionNameX, X], [dimensionNameY, Y], [defaultAttributeName, Value]])]);
+
+            //Expectations
+            sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
+            sinon.assert.calledOnceWithExactly(mockDbInstance.batch, [expectedOperation]);
+        });
+
+        //Nth Partition
+        it('should work with 2 dimension right edge or last key index.', async function () {
+            //Setup
+            const dimensionNameX = 'X';
+            const dimensionNameY = 'Y';
+            const defaultAttributeName = 'data';
+            const partitionSizeOfDimension = 10;
+            const X = totalKeySize / 2n;
+            const Y = totalKeySize / 2n;
+            const Value = "Last Egde";
+            const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
+            const expectedPartitionKey = `${(X / BigInt(partitionSizeOfDimension)).toString()}-${(Y / BigInt(partitionSizeOfDimension)).toString()}`;
+            const expectedOptions = { keyEncoding: 'binary', valueEncoding: 'json' };
+            const keyBuffer = Buffer.allocUnsafe(8);
+            const relativeAddX = BigInt(X) - ((X / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
+            const relativeAddY = BigInt(Y) - ((Y / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
+            keyBuffer.writeBigInt64BE((BigInt(partitionSizeOfDimension) * relativeAddY) + relativeAddX, 0);
+            const expectedOperation = { type: "put", key: keyBuffer, value: Value }
+
+            //Invoke
+            await Matrix.batchPut([new Map([[dimensionNameX, X], [dimensionNameY, Y], [defaultAttributeName, Value]])]);
+
+            //Expectations
+            sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
+            sinon.assert.calledOnceWithExactly(mockDbInstance.batch, [expectedOperation]);
+
+        });
+
+        //General validation for 2 Dimension
+        it('Parameter "data" should not allow dimension indexes less than 9223372036854775807', async function () {
+            //Setup
+            const dimensionNameX = 'X';
+            const dimensionNameY = 'Y';
+            const defaultAttributeName = 'data';
+            const X = (totalKeySize / 2n);
+            const Y = (totalKeySize / 2n) + 1n;
+            const Value = "Left Egde";
+            const partitionSizeOfDimension = 10;
+            const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
+
+            //Invoke
+            let error = await assert.rejected(async () => await Matrix.batchPut([new Map([[dimensionNameX, X], [dimensionNameY, Y], [defaultAttributeName, Value]])]));
+
+            //Expectations
+            assert.equal(error.message, `Cannot calculate address: Invalid cordinate for "${dimensionNameY}" dimension, value (${Y}) has to be between 0 to 9223372036854775807.`);
             sinon.assert.notCalled(mockResolver);
             sinon.assert.notCalled(mockDbInstance.batch);
         });

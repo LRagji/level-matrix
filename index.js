@@ -1,47 +1,75 @@
 module.exports = class Matrix {
 
+    #MaxKeySize = 2n ** 64n - 1n; //This is a signed 64bit integer
+    #MinimumIndexPerDimension = 0n;
+    #MaximumIndexPerDimension;
     #partitionHeight;
     #partitionWidth;
     #leveldbFactory
     #options = { keyEncoding: 'binary', valueEncoding: 'json' };
+    #sectionResolver = (cordinates) => { throw new Error("Dimensions not configured corectly."); };
 
-    constructor(leveldbResolver, partitionWidth = 86400000n, partitionHeight = 1000n) {
-        this.#partitionWidth = partitionWidth;
-        this.#partitionHeight = partitionHeight;
+    //We are using Map for dimensions cause it retains insertion order of the keys which helps us define which dimension will have be first for Row-Major-Order
+    constructor(leveldbResolver, dimensions = new Map([['x', 10], ['y', 10]])) {
+
+        if (leveldbResolver == null) throw new Error(`Parameter "leveldbResolver", cannot be null.`);
+        if (dimensions.size === 0) throw new Error(`Parameter "dimensions", cannot be empty.`);
+
+        this.#MaximumIndexPerDimension = this.#MaxKeySize / BigInt(dimensions.size);
+        dimensions.forEach((maximumLength, dimensionName) => {
+            if (BigInt(maximumLength) > this.#MaximumIndexPerDimension) throw new Error(`Parameter "dimensions", has an invalid dimension length for "${dimensionName}" which should not exceed ${this.#MaximumIndexPerDimension}.`)
+        });
+
         this.#leveldbFactory = leveldbResolver;
+        this.#sectionResolver = (cordinates) => {
+            if (cordinates.size !== dimensions.size) throw new Error(`Cannot calculate address: cordinates should match dimensions length ${dimensions.size}.`);
+            let address = 0n;
+            let dimensionFactor = 1n;
+            let sectionName = [];
+            dimensions.forEach((length, dimensionName) => {
+                length = BigInt(length);
+                let cordinate = cordinates.get(dimensionName);
+                if (cordinate == null) throw new Error(`Cannot calculate address: Missing cordinate for "${dimensionName}" dimension.`);
+                if (cordinate < this.#MinimumIndexPerDimension || cordinate > this.#MaximumIndexPerDimension) throw new Error(`Cannot calculate address: Invalid cordinate for "${dimensionName}" dimension, value (${cordinate}) has to be between ${this.#MinimumIndexPerDimension} to ${this.#MaximumIndexPerDimension}.`);
+                cordinate = BigInt(cordinate);
+                const section = cordinate / length; //Since it is Bigint it will always floor the division which is what we want here.
+                sectionName.push(section);
+                cordinate -= (section * length);
+                address += cordinate * dimensionFactor;
+                dimensionFactor *= length;
+            });
+            return { "address": address, "name": sectionName.join('-') };
+        };
 
         this.batchPut = this.batchPut.bind(this);
         this.computePartitionKeyWithCellNumber = this.computePartitionKeyWithCellNumber.bind(this);
         this.bigIntCeil = this.bigIntCeil.bind(this);
     }
 
-    async batchPut(data, dimensions = 2) //x,y,data
+    async batchPut(data, valueAttributeName = 'data') //Map Array with special attribute called data
     {
-        if (dimensions !== 2) throw new Error("Current version only supports 2 dimensions");
-        if (data == null || data.length === 0 || (data.length % (dimensions+1) !== 0)) throw new Error("Data cannot be empty and should be multiple of the dimensions defined.");
-        dimensions = BigInt(dimensions);
+        if (!Array.isArray(data)) throw new Error(`Parameter "data", to be array of maps.`);
+        if (data.length === 0) throw new Error(`Parameter "data", cannot be empty.`);
 
-        const opertationsAndDBMap = new Map();
-        for (let index = 0n; index < data.length; index += (dimensions + 1n)) {
-            const x = data[index];
-            const y = data[index + 1n];
-            const cellData = data[index + 2n];
-            if (x <= 0n || y <= 0n) throw new Error("Matrix dimensions starts from 1, (" + x + "," + y + ") is invalid.");
-
-            const computeResult = this.computePartitionKeyWithCellNumber(x, y);
-            if (!opertationsAndDBMap.has(computeResult.key)) opertationsAndDBMap.set(computeResult.key, []);
+        const operations = data.reduce((acc, input) => {
+            const value = input.get(valueAttributeName);
+            input.delete(valueAttributeName);
+            const section = this.#sectionResolver(input);
+            const sectionOperations = acc.get(section.name) || [];
             const keyBuffer = Buffer.allocUnsafe(8);
-            keyBuffer.writeBigInt64BE(computeResult.cell, 0);
-            opertationsAndDBMap.get(computeResult.key).push({ type: "put", key: keyBuffer, value: cellData })
-        }
+            keyBuffer.writeBigInt64BE(section.address, 0);
+            sectionOperations.push({ type: "put", key: keyBuffer, value: value });
+            acc.set(section.name, sectionOperations);
+            return acc;
+        }, new Map());
 
         const operationsPromises = [];
-        const partititons = Array.from(opertationsAndDBMap.keys());
+        const partititons = Array.from(operations.keys());
         for (let index = 0; index < partititons.length; index++) {
             const partitionKey = partititons[index];
-            const operations = opertationsAndDBMap.get(partitionKey);
+            const sectionOperations = operations.get(partitionKey);
             const dbInstance = await this.#leveldbFactory(partitionKey, this.#options)
-            operationsPromises.push(dbInstance.batch(operations));
+            operationsPromises.push(dbInstance.batch(sectionOperations));
         }
         return Promise.all(operationsPromises)
     }

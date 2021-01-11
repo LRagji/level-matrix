@@ -31,5 +31,9 @@
   },
   "peerDependencies": {
     "level-party": "4.0.0"
+  },
+  "dependencies": {
+    "level-party": "^4.0.0",
+    "pg-promise": "^10.8.7"
   }
 }

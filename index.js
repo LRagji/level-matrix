@@ -40,6 +40,22 @@ module.exports = class Matrix {
             });
             return { "address": address, "name": sectionName.join('-') };
         };
+        this.#rangeQueryResolver = (start, end) => {
+            const dimensionNames = Arrray.from(dimensions.keys()).reverse();//This is done so we maintain row major ordering while reading.
+            const queries = dimensionNames.reduce((acc, dimensionName) => {
+                const dimensionLength = dimensions.get(dimensionName);
+                const start = start.get(dimensionName);
+                const end = end.get(dimensionName);
+                const points = [start]
+                for (let dimensionIndex = start; dimensionIndex < end; dimensionIndex += dimensionLength) {
+                    points.push(dimensionIndex);
+                }
+                points.push(end);
+                acc.set(dimensionName, points);
+                return acc;
+            }, new Map());
+
+        };
 
         this.batchPut = this.batchPut.bind(this);
         this.computePartitionKeyWithCellNumber = this.computePartitionKeyWithCellNumber.bind(this);
@@ -89,6 +105,7 @@ module.exports = class Matrix {
     }
 
     async batchRangeRead(start, end, dimensions = 2n, transform = (x, y, value) => ({ i: true, t: { x: x, y: y, v: value } })) { //x,y
+
         if (dimensions !== 2n) throw new Error("Current version only supports 2 dimensions");
         if (BigInt(start.length) !== dimensions) throw new Error("Invalid start point, should match the number of dimensions.");
         if (BigInt(end.length) !== dimensions) throw new Error("Invalid end point, should match the number of dimensions.");

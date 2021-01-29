@@ -1,6 +1,8 @@
 const chai = require('chai');
 const sinon = require('sinon');
+const stream = require('stream');
 const assert = chai.assert;
+
 
 const matrixType = require('../index.js');
 let MatrixUnderTest;
@@ -15,9 +17,10 @@ assert.rejected = async (fn) => {
     }
     return error;
 }
+
 let mockDbInstance = {
     batch: sinon.fake.resolves(),
-    createReadStream: sinon.fake()
+    createReadStream: sinon.fake.throws("Did not set up read function")
 };
 let mockResolver = sinon.fake.resolves(mockDbInstance);
 
@@ -33,7 +36,7 @@ describe('level-matrix', function () {
         sinon.reset();
     });
 
-    describe('#constructor', function () {
+    describe.skip('#constructor', function () {
         it('should throw when dimesions is empty', async function () {
             assert.isNotNull(new matrixType(mockResolver, undefined), `Should default when undefined is passed`);
             let error = await assert.rejected(async () => new matrixType(mockResolver, new Map()));
@@ -57,7 +60,7 @@ describe('level-matrix', function () {
         });
     });
 
-    describe('#batchPut General Validations', function () {
+    describe.skip('#batchPut General Validations', function () {
 
         it('Parameter "data" should not allow non array values', async function () {
             //Setup
@@ -158,7 +161,7 @@ describe('level-matrix', function () {
         });
     });
 
-    describe('#batchPut 1 Dimension', function () {
+    describe.skip('#batchPut 1 Dimension', function () {
 
         //1st Partition
         it('should work with 1 dimension within left edge of first partition', async function () {
@@ -343,7 +346,7 @@ describe('level-matrix', function () {
 
     });
 
-    describe('#batchPut 2 Dimension', function () {
+    describe.skip('#batchPut 2 Dimension', function () {
 
         //1st Partition
         it('should work with 2 dimension within left edge of first partition', async function () {
@@ -552,6 +555,42 @@ describe('level-matrix', function () {
             assert.equal(error.message, `Cannot calculate address: Invalid cordinate for "${dimensionNameY}" dimension, value (${Y}) has to be between 0 to 9223372036854775807.`);
             sinon.assert.notCalled(mockResolver);
             sinon.assert.notCalled(mockDbInstance.batch);
+        });
+
+    });
+
+    describe('#sortedRangeRead', function () {
+
+        it('should resolve to correct address for left edge of the section', async function () {
+            //Setup
+            const dimensionNameX = 'X';
+            const dimensionNameY = 'Y';
+            const partitionSizeOfDimension = 6;
+            const X = 0n;
+            const Y = 0n;
+            const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
+            const expectedPartitionKey = `${(X / BigInt(partitionSizeOfDimension)).toString()}-${(Y / BigInt(partitionSizeOfDimension)).toString()}`;
+            const expectedOptions = { keyEncoding: 'binary', valueEncoding: 'json' };
+            const expectedKeyBuffer = Buffer.allocUnsafe(8);
+            const relativeAddX = BigInt(X) - ((X / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
+            const relativeAddY = BigInt(Y) - ((Y / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
+            expectedKeyBuffer.writeBigInt64BE((BigInt(partitionSizeOfDimension) * relativeAddY) + relativeAddX, 0);
+            const selfClosingStream = (time) => {
+                return () => {
+                    const mockedStream = new stream.PassThrough();
+                    setTimeout(() => mockedStream.destroy(), time);
+                    return mockedStream;
+                }
+            }
+            mockDbInstance.createReadStream = sinon.fake(selfClosingStream(50));
+            const actualCallBack = sinon.fake();
+
+            //Invoke
+            await Matrix.sortedRangeRead(new Map([[dimensionNameX, 0], [dimensionNameY, 0]]), new Map([[dimensionNameX, 20], [dimensionNameY, 0]]), console.log);
+
+            //Expectations
+            sinon.assert.calledWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
+
         });
 
     });

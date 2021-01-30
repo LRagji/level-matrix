@@ -559,7 +559,7 @@ describe('level-matrix', function () {
 
     });
 
-    describe('#sortedRangeRead', function () {
+    describe('#rangeRead Sorted', function () {
 
         it('should resolve to correct address for left edge of the section', async function () {
             //Setup
@@ -586,7 +586,7 @@ describe('level-matrix', function () {
             const actualCallBack = sinon.fake();
 
             //Invoke
-            await Matrix.sortedRangeRead(new Map([[dimensionNameX, 0], [dimensionNameY, 0]]), new Map([[dimensionNameX, 20], [dimensionNameY, 0]]), console.log);
+            await Matrix.rangeRead(new Map([[dimensionNameX, 0], [dimensionNameY, 0]]), new Map([[dimensionNameX, 20], [dimensionNameY, 0]]), console.log, true);
 
             //Expectations
             sinon.assert.calledWithExactly(mockResolver, expectedPartitionKey, expectedOptions);

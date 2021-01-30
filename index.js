@@ -6,7 +6,8 @@ module.exports = class Matrix {
     #partitionHeight;
     #partitionWidth;
     #leveldbFactory;
-    #processSortedCoordinate;
+    #convertCoordinatesToSortedQueries;
+    #convertCoordinatesToOptimizedQueries;
     #dimensions;
     #options = { keyEncoding: 'binary', valueEncoding: 'json' };
     #sectionResolver = (cordinates) => { throw new Error("Dimensions not configured corectly."); };
@@ -17,13 +18,12 @@ module.exports = class Matrix {
     constructor(leveldbResolver, dimensions = new Map([['x', 10], ['y', 10]])) {
 
         this.batchPut = this.batchPut.bind(this);
-        this.sortedRangeRead = this.sortedRangeRead.bind(this);
+        this.rangeRead = this.rangeRead.bind(this);
 
         this.#dimensionForLoop = this.dimensionForLoop.bind(this);
         this.#dataRead = this.dataRead.bind(this);
-        this.#processSortedCoordinate = this.processSortedCoordinate.bind(this);
-        // this.computePartitionKeyWithCellNumber = this.computePartitionKeyWithCellNumber.bind(this);
-        // this.bigIntCeil = this.bigIntCeil.bind(this);
+        this.#convertCoordinatesToSortedQueries = this.convertCoordinatesToSortedQueries.bind(this);
+        this.#convertCoordinatesToOptimizedQueries = this.convertCoordinatesToOptimizedQueries.bind(this);
 
         if (leveldbResolver == null) throw new Error(`Parameter "leveldbResolver", cannot be null.`);
         if (dimensions.size === 0) throw new Error(`Parameter "dimensions", cannot be empty.`);
@@ -101,7 +101,7 @@ module.exports = class Matrix {
         return accumulator;
     }
 
-    async sortedRangeRead(start, stop, dataCallback) {
+    async rangeRead(start, stop, dataCallback, sorted = false) {
         const range = [];
         start.forEach((dimensionStart, dimensionKey) => {
             range.push({
@@ -113,46 +113,58 @@ module.exports = class Matrix {
             })
         });
 
-        const queries = this.#dimensionForLoop(range, this.#processSortedCoordinate);
-        if (queries.acc.size > 0) {
-            const sectionName = Array.from(queries.acc.keys())[0];
-            const range = queries.acc.get(sectionName);
-            queries.results.push({ name: sectionName, range: range });
-        }
+        const queries = this.#dimensionForLoop(range, (sorted === true ? this.#convertCoordinatesToSortedQueries : this.#convertCoordinatesToOptimizedQueries));
 
         await this.#dataRead(queries, dataCallback);
     }
 
-    processSortedCoordinate(accumulator, coordinates) {
-        if (accumulator == null) accumulator = { acc: new Map(), results: [] };
+    convertCoordinatesToSortedQueries(accumulator, coordinates) {
+        if (accumulator == null) accumulator = [];
         const sectionDetails = this.#sectionResolver(coordinates);
-        if (accumulator.acc.has(sectionDetails.name)) {
-            accumulator.acc.get(sectionDetails.name).end = sectionDetails.address;
+        if (accumulator.length > 0) {
+            if (accumulator[accumulator.length - 1].name === sectionDetails.name) {
+                accumulator[accumulator.length - 1].end = sectionDetails.address;
+            }
+            else {
+                accumulator.push({ "name": sectionDetails.name, "start": sectionDetails.address, "end": sectionDetails.address });
+            }
         }
         else {
-            if (accumulator.acc.size > 0) {
-                const sectionName = Array.from(accumulator.acc.keys())[0];
-                const range = accumulator.acc.get(sectionName);
-                accumulator.results.push({ name: sectionName, range: range });
-                accumulator.acc.clear();
+            accumulator.push({ "name": sectionDetails.name, "start": sectionDetails.address, "end": sectionDetails.address });
+        }
+        return accumulator;
+    }
+
+    convertCoordinatesToOptimizedQueries(accumulator, coordinates) {
+        if (accumulator == null) accumulator = [];
+        const sectionDetails = this.#sectionResolver(coordinates);
+        if (accumulator.length > 0) {
+            let result = accumulator.find(e => e.name === sectionDetails.name); //Use Map when sections are going to be more than 1K
+            if (result != undefined) {
+                result.end = sectionDetails.address;
             }
-            accumulator.acc.set(sectionDetails.name, { "start": sectionDetails.address, "end": sectionDetails.address });
+            else {
+                accumulator.push({ "name": sectionDetails.name, "start": sectionDetails.address, "end": sectionDetails.address });
+            }
+        }
+        else {
+            accumulator.push({ "name": sectionDetails.name, "start": sectionDetails.address, "end": sectionDetails.address });
         }
         return accumulator;
     }
 
     async dataRead(queries, dataCallback) {
-        for (let index = 0; index < queries.results.length; index++) {
-            const query = queries.results[index];
-            //console.log(`Section: ${query.name} From: ${query.range.start} To: ${query.range.end}`);
+        for (let index = 0; index < queries.length; index++) {
+            const query = queries[index];
+            //console.log(`Section: ${query.name} From: ${query.start} To: ${query.end}`);
             const dbInstance = await this.#leveldbFactory(query.name, this.#options);
 
             await new Promise((complete, reject) => {
                 let completed = false;
                 const startKeyBuffer = Buffer.allocUnsafe(8);
                 const endKeyBuffer = Buffer.allocUnsafe(8);
-                startKeyBuffer.writeBigInt64BE(query.range.start, 0);
-                endKeyBuffer.writeBigInt64BE(query.range.end, 0);
+                startKeyBuffer.writeBigInt64BE(query.start, 0);
+                endKeyBuffer.writeBigInt64BE(query.end, 0);
                 dbInstance.createReadStream({ gte: startKeyBuffer, lte: endKeyBuffer })
                     .on('data', async function (data) {
                         //console.log(partitionKey + ": " + data.key, '=', data.value)
@@ -162,7 +174,7 @@ module.exports = class Matrix {
                         // X = X + (offsetX * alias.width);
                         // Y = Y + (offsetY * alias.height);
                         // cellData.push({ x: X, y: Y, v: data.value })
-                        await dataCallback(query, data);
+                        await dataCallback(data, index, queries.length, query);
                     })
                     .on('error', function (err) {
                         console.log(query.name + ": " + 'Oh my!', err)
@@ -185,123 +197,4 @@ module.exports = class Matrix {
             })
         }
     }
-
-    // bigIntCeil(a, b) {
-    //     return a % b === 0n ? a / b : (a / b) + 1n;
-    // }
-
-    // computePartitionKeyWithCellNumber(x, y) {
-    //     const horizontalSection = this.bigIntCeil(x, this.#partitionWidth);
-    //     const verticalSection = this.bigIntCeil(y, this.#partitionHeight);
-    //     const partitionKey = `${horizontalSection}-${verticalSection}`;
-    //     const partitionX = x - ((this.#partitionWidth * horizontalSection) - this.#partitionWidth);
-    //     const partitionY = y - ((this.#partitionHeight * verticalSection) - this.#partitionHeight);
-    //     const partitionCellNumber = (partitionY * this.#partitionWidth) - (this.#partitionWidth - partitionX);
-    //     return { key: partitionKey, cell: partitionCellNumber };
-    // }
-
-    // async brangeRead(start, end, dimensions = 2n, transform = (x, y, value) => ({ i: true, t: { x: x, y: y, v: value } })) { //x,y
-
-    //     if (dimensions !== 2n) throw new Error("Current version only supports 2 dimensions");
-    //     if (BigInt(start.length) !== dimensions) throw new Error("Invalid start point, should match the number of dimensions.");
-    //     if (BigInt(end.length) !== dimensions) throw new Error("Invalid end point, should match the number of dimensions.");
-    //     let startX = start[0];
-    //     let startY = start[1];
-    //     const endX = end[0];
-    //     const endY = end[1];
-    //     if (!(startX >= 1n && startX <= endX)) throw new Error("Invalid start X point, should be between 1 and end point of X.");
-    //     if (!(startY >= 1n && startY <= endY)) throw new Error("Invalid start X point, should be between 1 and end point of Y.");
-    //     const internalFilter = (s) => s.x >= start[0] && s.x <= end[0];
-
-    //     const rangeQueries = new Map();
-    //     const sPoint = this.computePartitionKeyWithCellNumber(startX, startY);
-    //     const ePoint = this.computePartitionKeyWithCellNumber(endX, endY);
-
-    //     while (startY <= endY) {
-    //         const partitionStartY = (startY - (startY % this.#partitionHeight)) + 1n;
-    //         const partitionEndY = (startY - (startY % this.#partitionHeight)) + this.#partitionHeight;
-    //         while (startX <= endX) {
-    //             const partitionStartX = (startX - (startX % this.#partitionWidth)) + 1n;
-    //             const partitionEndX = (startX - (startX % this.#partitionWidth)) + this.#partitionWidth;
-
-    //             const sMidPoint = this.computePartitionKeyWithCellNumber(partitionStartX, partitionStartY);
-    //             if (!rangeQueries.has(sMidPoint.key)) rangeQueries.set(sMidPoint.key, {});
-    //             rangeQueries.get(sMidPoint.key).start = sMidPoint.cell;
-    //             const eMidPoint = this.computePartitionKeyWithCellNumber(partitionEndX, partitionEndY);
-    //             rangeQueries.get(eMidPoint.key).end = eMidPoint.cell;
-
-    //             startX = partitionStartX + this.#partitionWidth;
-    //         }
-    //         startY = partitionStartY + this.#partitionHeight;
-    //     }
-
-    //     rangeQueries.get(sPoint.key).start = sPoint.cell;
-    //     rangeQueries.get(ePoint.key).end = ePoint.cell;
-
-
-    //     let promises = [];
-    //     const alias = { height: this.#partitionHeight, width: this.#partitionWidth, bigIntCeil: this.bigIntCeil };
-    //     const partititons = Array.from(rangeQueries.keys());
-    //     for (let index = 0; index < partititons.length; index++) {
-    //         const partitionKey = partititons[index];
-    //         const query = rangeQueries.get(partitionKey);
-    //         const dbInstance = await this.#leveldbFactory(partitionKey, this.#options)
-    //         //console.log(`${partitionKey} : ${JSONBigIntNativeParser.stringify(query)}`);
-    //         promises.push(new Promise((complete, reject) => {
-    //             let completed = false;
-    //             const cellData = [];
-    //             const offsetX = BigInt(partitionKey.split("-")[0]) - 1n;
-    //             const offsetY = BigInt(partitionKey.split("-")[1]) - 1n;
-    //             const startKeyBuffer = Buffer.allocUnsafe(8);
-    //             const endKeyBuffer = Buffer.allocUnsafe(8);
-    //             startKeyBuffer.writeBigInt64BE(query.start, 0);
-    //             endKeyBuffer.writeBigInt64BE(query.end, 0);
-    //             dbInstance.createReadStream({ gte: startKeyBuffer, lte: endKeyBuffer })
-    //                 //this.#partitions.get(partitionKey).createReadStream({ gte: 3, lte: 3 })
-    //                 .on('data', function (data) {
-    //                     //console.log(partitionKey + ": " + data.key, '=', data.value)
-    //                     data.key = Buffer.from(data.key.buffer).readBigInt64BE(0)
-    //                     let Y = alias.bigIntCeil(data.key, alias.width);
-    //                     let X = data.key - ((Y - 1n) * alias.width);
-    //                     X = X + (offsetX * alias.width);
-    //                     Y = Y + (offsetY * alias.height);
-    //                     cellData.push({ x: X, y: Y, v: data.value })
-    //                 })
-    //                 .on('error', function (err) {
-    //                     console.log(partitionKey + ": " + 'Oh my!', err)
-    //                     reject(err);
-    //                 })
-    //                 .on('close', function () {
-    //                     //console.log(partitionKey + ": " + 'Stream closed')
-    //                     if (!completed) {
-    //                         complete({ data: cellData, x: offsetX, y: offsetY });
-    //                         completed = true;
-    //                     };
-    //                 })
-    //                 .on('end', function () {
-    //                     //console.log(partitionKey + ": " + 'Stream ended')
-    //                     if (!completed) {
-    //                         complete({ data: cellData, x: offsetX, y: offsetY });
-    //                         completed = true;
-    //                     };
-    //                 })
-    //         }));
-    //     };
-
-    //     let results = await Promise.all(promises);
-
-    //     //Sort
-    //     results = results.sort((a, b) => a.x < b.x ? -1 : (a.x > b.x ? 1 : 0));
-
-    //     //Flatten ,Filter and Transform
-    //     return results.reduce((acc, e) => acc.concat(e.data.reduce((acc, s) => {
-    //         if (internalFilter(s)) {
-    //             const transformed = transform(s.x, s.y, s.v);
-    //             transformed.i = transformed.i || false;
-    //             if (transformed.i) acc.push(transformed.t);
-    //         }
-    //         return acc;
-    //     }, [])), []);
-    // }
-
 }

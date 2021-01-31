@@ -84,21 +84,20 @@ module.exports = class Matrix {
         return Promise.all(operationsPromises)
     }
 
-    dimensionForLoop(dimensions, callback, dimensionIndex = (dimensions.length - 1)) {
+    dimensionForLoop(dimensions, callback, callbackAccumulator, dimensionIndex = (dimensions.length - 1)) {
         const iteratorDefinition = dimensions[dimensionIndex];
-        let accumulator = null;
         for (let index = iteratorDefinition.start; index <= iteratorDefinition.stop; index += iteratorDefinition.incrementby) {
             iteratorDefinition.counter = index;
             if (dimensionIndex > 0) {
-                accumulator = this.#dimensionForLoop(dimensions, callback, dimensionIndex - 1);
+                callbackAccumulator = this.#dimensionForLoop(dimensions, callback, callbackAccumulator, dimensionIndex - 1);
             }
             else {
                 const coordinates = new Map(dimensions.map(e => [e.name, e.counter]));
-                //console.log(coordinates.join(',') + `     ${dimensions.map(e => Math.floor(e.counter / e.sectionLength)).join('-')}      ${dimensions.map(e => e.counter - e.start).join('-')}`);
-                accumulator = callback(accumulator, coordinates);
+                console.log(`${dimensions.map(e => e.counter).join(',')}`);
+                callbackAccumulator = callback(callbackAccumulator, coordinates);
             }
         }
-        return accumulator;
+        return callbackAccumulator;
     }
 
     async rangeRead(start, stop, dataCallback, sorted = false) {
@@ -113,42 +112,51 @@ module.exports = class Matrix {
             })
         });
 
-        const queries = this.#dimensionForLoop(range, (sorted === true ? this.#convertCoordinatesToSortedQueries : this.#convertCoordinatesToOptimizedQueries));
+        const queries = this.#dimensionForLoop(range, (sorted === true ? this.#convertCoordinatesToSortedQueries : this.#convertCoordinatesToOptimizedQueries), []);
 
         await this.#dataRead(queries, dataCallback);
     }
 
     convertCoordinatesToSortedQueries(accumulator, coordinates) {
-        if (accumulator == null) accumulator = [];
         const sectionDetails = this.#sectionResolver(coordinates);
         if (accumulator.length > 0) {
-            if (accumulator[accumulator.length - 1].name === sectionDetails.name) {
+            if (accumulator[accumulator.length - 1].name === sectionDetails.name && (sectionDetails.address - accumulator[accumulator.length - 1].end) === 1n) {
                 accumulator[accumulator.length - 1].end = sectionDetails.address;
             }
             else {
-                accumulator.push({ "name": sectionDetails.name, "start": sectionDetails.address, "end": sectionDetails.address });
+                accumulator.push({ "name": sectionDetails.name, "startCoordinates": coordinates, "start": sectionDetails.address, "end": sectionDetails.address });
             }
         }
         else {
-            accumulator.push({ "name": sectionDetails.name, "start": sectionDetails.address, "end": sectionDetails.address });
+            accumulator.push({ "name": sectionDetails.name, "startCoordinates": coordinates, "start": sectionDetails.address, "end": sectionDetails.address });
         }
         return accumulator;
     }
 
     convertCoordinatesToOptimizedQueries(accumulator, coordinates) {
-        if (accumulator == null) accumulator = [];
         const sectionDetails = this.#sectionResolver(coordinates);
         if (accumulator.length > 0) {
-            let result = accumulator.find(e => e.name === sectionDetails.name); //Use Map when sections are going to be more than 1K
-            if (result != undefined) {
-                result.end = sectionDetails.address;
+            let lastNameMatchingIndex = -1;
+            let contigiousRangeFound = false;
+            for (let index = 0; index < accumulator.length; index++) {
+                if (accumulator[index].name === sectionDetails.name) {
+                    lastNameMatchingIndex = index;
+                    if ((sectionDetails.address - accumulator[index].end) === 1n) {
+                        accumulator[index].end = sectionDetails.address;
+                        contigiousRangeFound = true;
+                        break;
+                    }
+                }
             }
-            else {
-                accumulator.push({ "name": sectionDetails.name, "start": sectionDetails.address, "end": sectionDetails.address });
+            if (lastNameMatchingIndex === -1) {
+                accumulator.push({ "name": sectionDetails.name, "startCoordinates": coordinates, "start": sectionDetails.address, "end": sectionDetails.address });
+            }
+            else if (contigiousRangeFound == false) {
+                accumulator.splice(lastNameMatchingIndex, 0, { "name": sectionDetails.name, "startCoordinates": coordinates, "start": sectionDetails.address, "end": sectionDetails.address });
             }
         }
         else {
-            accumulator.push({ "name": sectionDetails.name, "start": sectionDetails.address, "end": sectionDetails.address });
+            accumulator.push({ "name": sectionDetails.name, "startCoordinates": coordinates, "start": sectionDetails.address, "end": sectionDetails.address });
         }
         return accumulator;
     }
@@ -156,45 +164,52 @@ module.exports = class Matrix {
     async dataRead(queries, dataCallback) {
         for (let index = 0; index < queries.length; index++) {
             const query = queries[index];
-            //console.log(`Section: ${query.name} From: ${query.start} To: ${query.end}`);
+            console.log(`Section: ${query.name} From: ${query.start} To: ${query.end} Cordinates: ${Array.from(query.startCoordinates.keys()).map(k => k + " " + query.startCoordinates.get(k)).join(',')}`);
             const dbInstance = await this.#leveldbFactory(query.name, this.#options);
-
-            await new Promise((complete, reject) => {
-                let completed = false;
-                const startKeyBuffer = Buffer.allocUnsafe(8);
-                const endKeyBuffer = Buffer.allocUnsafe(8);
-                startKeyBuffer.writeBigInt64BE(query.start, 0);
-                endKeyBuffer.writeBigInt64BE(query.end, 0);
-                dbInstance.createReadStream({ gte: startKeyBuffer, lte: endKeyBuffer })
-                    .on('data', async function (data) {
-                        //console.log(partitionKey + ": " + data.key, '=', data.value)
-                        data.key = Buffer.from(data.key.buffer).readBigInt64BE(0)
-                        // let Y = alias.bigIntCeil(data.key, alias.width);
-                        // let X = data.key %;
-                        // X = X + (offsetX * alias.width);
-                        // Y = Y + (offsetY * alias.height);
-                        // cellData.push({ x: X, y: Y, v: data.value })
-                        await dataCallback(data, index, queries.length, query);
-                    })
-                    .on('error', function (err) {
-                        console.log(query.name + ": " + 'Oh my!', err)
-                        reject(err);
-                    })
-                    .on('close', function () {
-                        //console.log(query.name + ": " + 'Stream closed')
-                        if (completed === false) {
-                            complete();
-                            completed = true;
-                        };
-                    })
-                    .on('end', function () {
-                        //console.log(query.name + ": " + 'Stream ended')
-                        if (completed === false) {
-                            complete();
-                            completed = true;
-                        };
-                    });
-            })
+            const startKeyBuffer = Buffer.allocUnsafe(8);
+            const endKeyBuffer = Buffer.allocUnsafe(8);
+            startKeyBuffer.writeBigInt64BE(query.start, 0);
+            endKeyBuffer.writeBigInt64BE(query.end, 0);
+            if (query.start === query.end) {
+                let data = await new Promise((complete, reject) => {
+                    dbInstance.get(startKeyBuffer, (err, value) => (err == undefined || err.type == 'NotFoundError') ? complete(value) : reject(err));
+                })
+                await dataCallback(data, index, queries.length, query);
+            }
+            else {
+                await new Promise((complete, reject) => {
+                    let completed = false;
+                    dbInstance.createReadStream({ gte: startKeyBuffer, lte: endKeyBuffer })
+                        .on('data', async function (data) {
+                            //console.log(partitionKey + ": " + data.key, '=', data.value)
+                            data.key = Buffer.from(data.key.buffer).readBigInt64BE(0)
+                            // let Y = alias.bigIntCeil(data.key, alias.width);
+                            // let X = data.key %;
+                            // X = X + (offsetX * alias.width);
+                            // Y = Y + (offsetY * alias.height);
+                            // cellData.push({ x: X, y: Y, v: data.value })
+                            await dataCallback(data, index, queries.length, query);
+                        })
+                        .on('error', function (err) {
+                            console.log(query.name + ": " + 'Oh my!', err)
+                            reject(err);
+                        })
+                        .on('close', function () {
+                            //console.log(query.name + ": " + 'Stream closed')
+                            if (completed === false) {
+                                complete();
+                                completed = true;
+                            };
+                        })
+                        .on('end', function () {
+                            //console.log(query.name + ": " + 'Stream ended')
+                            if (completed === false) {
+                                complete();
+                                completed = true;
+                            };
+                        });
+                })
+            }
         }
     }
 }

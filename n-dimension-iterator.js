@@ -95,80 +95,104 @@
 
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-// loop([
-//     { name: "X", start: 0, stop: 10, incrementby: 1, sectionLength: 5 }
-//     , { name: "Y", start: 0, stop: 10, incrementby: 1, sectionLength: 5 }
-//     , { name: "Z", start: 0, stop: 10, incrementby: 1, sectionLength: 5 }
-//     // , { name: "W", start: 0, stop: 10, incrementby: 1 }
-// ]);
-function sectionResolver(cordinates, dimensions) {
-    const MaximumIndexPerDimension = (2n ** 64n - 1n) / BigInt(dimensions.size);
-    if (cordinates.size !== dimensions.size) throw new Error(`Cannot calculate address: cordinates should match dimensions length ${dimensions.size}.`);
-    let address = 0n;
-    let dimensionFactor = 1n;
-    let sectionName = [];
-    dimensions.forEach((length, dimensionName) => {
-        length = BigInt(length);
-        let cordinate = cordinates.get(dimensionName);
-        if (cordinate == null) throw new Error(`Cannot calculate address: Missing cordinate for "${dimensionName}" dimension.`);
-        if (cordinate < 0n || cordinate > MaximumIndexPerDimension) throw new Error(`Cannot calculate address: Invalid cordinate for "${dimensionName}" dimension, value (${cordinate}) has to be between ${0n} to ${MaximumIndexPerDimension}.`);
-        cordinate = BigInt(cordinate);
-        const section = cordinate / length; //Since it is Bigint it will always floor the division which is what we want here.
-        sectionName.push(section);
-        cordinate -= (section * length);
-        address += cordinate * dimensionFactor;
-        dimensionFactor *= length;
-    });
-    return { "address": address, "name": sectionName.join('-') };
-};
+// function sectionResolver(cordinates, dimensions) {
+//     const MaximumIndexPerDimension = (2n ** 64n - 1n) / BigInt(dimensions.size);
+//     if (cordinates.size !== dimensions.size) throw new Error(`Cannot calculate address: cordinates should match dimensions length ${dimensions.size}.`);
+//     let address = 0n;
+//     let dimensionFactor = 1n;
+//     let sectionName = [];
+//     dimensions.forEach((length, dimensionName) => {
+//         length = BigInt(length);
+//         let cordinate = cordinates.get(dimensionName);
+//         if (cordinate == null) throw new Error(`Cannot calculate address: Missing cordinate for "${dimensionName}" dimension.`);
+//         if (cordinate < 0n || cordinate > MaximumIndexPerDimension) throw new Error(`Cannot calculate address: Invalid cordinate for "${dimensionName}" dimension, value (${cordinate}) has to be between ${0n} to ${MaximumIndexPerDimension}.`);
+//         cordinate = BigInt(cordinate);
+//         const section = cordinate / length; //Since it is Bigint it will always floor the division which is what we want here.
+//         sectionName.push(section);
+//         cordinate -= (section * length);
+//         address += cordinate * dimensionFactor;
+//         dimensionFactor *= length;
+//     });
+//     return { "address": address, "name": sectionName.join('-') };
+// };
 
 
-function loop(dimensions, callback, dimensionIndex = (dimensions.length - 1)) {
-    const iteratorDefinition = dimensions[dimensionIndex];
-    for (let index = iteratorDefinition.start; index < iteratorDefinition.stop; index += iteratorDefinition.incrementby) {
-        iteratorDefinition.counter = index;
-        if (dimensionIndex > 0) {
-            loop(dimensions, callback, dimensionIndex - 1);
-        }
-        else {
-            const coordinates = new Map(dimensions.map(e => [e.name, e.counter]));
-            //console.log(coordinates.join(',') + `     ${dimensions.map(e => Math.floor(e.counter / e.sectionLength)).join('-')}      ${dimensions.map(e => e.counter - e.start).join('-')}`);
-            callback(coordinates);
-        }
-    }
-}
+// function loop(dimensions, callback, dimensionIndex = (dimensions.length - 1)) {
+//     const iteratorDefinition = dimensions[dimensionIndex];
+//     for (let index = iteratorDefinition.start; index < iteratorDefinition.stop; index += iteratorDefinition.incrementby) {
+//         iteratorDefinition.counter = index;
+//         if (dimensionIndex > 0) {
+//             loop(dimensions, callback, dimensionIndex - 1);
+//         }
+//         else {
+//             const coordinates = new Map(dimensions.map(e => [e.name, e.counter]));
+//             //console.log(coordinates.join(',') + `     ${dimensions.map(e => Math.floor(e.counter / e.sectionLength)).join('-')}      ${dimensions.map(e => e.counter - e.start).join('-')}`);
+//             callback(coordinates);
+//         }
+//     }
+// }
 
-function processSortedCoordinate(context) {
-    return (coordinates) => {
-        const sectionDetails = sectionResolver(coordinates, context.dimensions);
-        if (context.query.has(sectionDetails.name)) {
-            context.query.get(sectionDetails.name).end = sectionDetails.address;
-        }
-        else {
-            if (context.query.size > 0) {
-                const sectionName = Array.from(context.query.keys())[0];
-                const range = context.query.get(sectionName);
-                console.log(`${sectionName} start: ${range.start} end: ${range.end}`);
-                context.query.clear();
-            }
-            context.query.set(sectionDetails.name, { "start": sectionDetails.address, "end": sectionDetails.address });
-        }
-        //console.log(Array.from(coordinates.values()).join(',') + ` Name:${sectionDetails.name} Address:${sectionDetails.address}`);
-    }
-}
+// function processSortedCoordinate(context) {
+//     return (coordinates) => {
+//         const sectionDetails = sectionResolver(coordinates, context.dimensions);
+//         if (context.query.has(sectionDetails.name)) {
+//             context.query.get(sectionDetails.name).end = sectionDetails.address;
+//         }
+//         else {
+//             if (context.query.size > 0) {
+//                 const sectionName = Array.from(context.query.keys())[0];
+//                 const range = context.query.get(sectionName);
+//                 console.log(`${sectionName} start: ${range.start} end: ${range.end}`);
+//                 context.query.clear();
+//             }
+//             context.query.set(sectionDetails.name, { "start": sectionDetails.address, "end": sectionDetails.address });
+//         }
+//         //console.log(Array.from(coordinates.values()).join(',') + ` Name:${sectionDetails.name} Address:${sectionDetails.address}`);
+//     }
+// }
 
-function range(start = new Map([['x', 10], ['y', 10], ['z', 10]]), stop = new Map([['x', 20], ['y', 20], ['z', 20]]), section = new Map([['x', 5], ['y', 5], ['z', 5]])) {
-    const range = [];
-    start.forEach((dimensionStart, dimensionKey) => {
-        range.push({
-            name: dimensionKey,
-            start: dimensionStart,
-            stop: stop.get(dimensionKey),
-            incrementby: 1,
-            sectionLength: section.get(dimensionKey)
+// function range(start = new Map([['x', 10], ['y', 10], ['z', 10]]), stop = new Map([['x', 20], ['y', 20], ['z', 20]]), section = new Map([['x', 5], ['y', 5], ['z', 5]])) {
+//     const range = [];
+//     start.forEach((dimensionStart, dimensionKey) => {
+//         range.push({
+//             name: dimensionKey,
+//             start: dimensionStart,
+//             stop: stop.get(dimensionKey),
+//             incrementby: 1,
+//             sectionLength: section.get(dimensionKey)
+//         })
+//     });
+//     loop(range, processSortedCoordinate({ dimensions: section, query: new Map() }));
+// }
+// range();
+
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+var level = require('level-party')
+var db = level(__dirname + '/data', { keyEncoding: 'binary', valueEncoding: 'json' })
+const start = Buffer.allocUnsafe(8);
+start.writeBigInt64BE(1n, 0);
+const end = Buffer.allocUnsafe(8);
+end.writeBigInt64BE(2n, 0);
+let x = new Promise((a, r) => {
+    db.createReadStream({ gte: start, lte: start })
+        .on('data', function (data) {
+            console.log(data.key, '=', data.value)
         })
-    });
-    loop(range, processSortedCoordinate({ dimensions: section, query: new Map() }));
-}
-range();
-console.log("Done");
+        .on('error', function (err) {
+            console.log('Oh my!', err)
+            r();
+        })
+        .on('close', function () {
+            console.log('Stream closed')
+            a();
+        })
+        .on('end', function () {
+            console.log('Stream ended')
+            a();
+        })
+});
+x.then((e) =>
+    console.log("Done")
+)

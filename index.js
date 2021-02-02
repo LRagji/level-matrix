@@ -103,22 +103,43 @@ module.exports = class Matrix {
     }
 
     async rangeRead(start, stop, dataCallback, sorted = false) {
-        const temp= new Map();
-        start.forEach((value,key)=>temp.set(key,BigInt(value)));
-        start= new Map(temp);
-        temp.clear();
-        stop.forEach((value,key)=>temp.set(key,BigInt(value)));
-        stop= new Map(temp);
-        temp.clear();
+        //Validation
+        if (!(start instanceof Map)) {
+            throw new Error(`Invalid Parameter "start" it should be a Map instance.`);
+        }
+        if (!(stop instanceof Map)) {
+            throw new Error(`Invalid Parameter "stop" it should be a Map instance.`);
+        }
+        if (!(dataCallback instanceof Function)) {
+            throw new Error(`Invalid Parameter "dataCallback" it should be a function.`);
+        }
+        if (start.size !== stop.size) {
+            throw new Error(`Invalid Parameter "start"(${start.size}) or "stop"(${stop.size}); they should match on number of dimensions.`);
+        }
 
         const range = [];
-        start.forEach((dimensionStart, dimensionKey) => {
+        start.forEach((startValue, key) => {
+            startValue = startValue;
+            const stopValue = stop.get(key);
+            const dimensionLength = this.#dimensions.get(key);
+
+            if (dimensionLength == null) {
+                throw new Error(`Parameter "start", has an invalid dimension("${key}") which has no defined length or is a new dimension.`)
+            }
+
+            if (startValue == undefined || BigInt(startValue) < this.#MinimumIndexPerDimension || BigInt(startValue) > this.#MaximumIndexPerDimension) {
+                throw new Error(`Parameter "start", has an invalid index "${startValue}" for "${key}" dimension which should be between ${this.#MinimumIndexPerDimension} and ${this.#MaximumIndexPerDimension}.`)
+            }
+            if (stopValue == undefined || BigInt(stopValue) < BigInt(startValue) || BigInt(stopValue) > this.#MaximumIndexPerDimension) {
+                throw new Error(`Parameter "stop", has an invalid index "${stopValue}" for "${key}" dimension which should be between ${startValue} and ${this.#MaximumIndexPerDimension}.`)
+            }
+
             range.push({
-                name: dimensionKey,
-                start: dimensionStart,
-                stop: stop.get(dimensionKey),
+                name: key,
+                start: BigInt(startValue),
+                stop: BigInt(stopValue),
                 incrementby: 1n,
-                sectionLength: this.#dimensions.get(dimensionKey)
+                sectionLength: dimensionLength
             })
         });
 

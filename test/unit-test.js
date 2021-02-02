@@ -537,7 +537,7 @@ describe('level-matrix', function () {
         });
 
         //General validation for 2 Dimension
-        it('Parameter "data" should not allow dimension indexes less than 9223372036854775807', async function () {
+        it('Parameter "data" should only allow dimension indexes less than 9223372036854775807', async function () {
             //Setup
             const dimensionNameX = 'X';
             const dimensionNameY = 'Y';
@@ -559,11 +559,112 @@ describe('level-matrix', function () {
 
     });
 
+    describe('#rangeRead General Validations', function () {
+
+        it('should not allow nulls or undefined for start, stop and datacallback', async function () {
+            const dimensionNameX = 'X';
+            const dimensionNameY = 'Y';
+            const partitionSizeOfDimension = 5;
+            const X = 0n;
+            const Y = 0n;
+            const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
+
+
+            let error = await assert.rejected(async () => Matrix.rangeRead(null, new Map(), () => { }));
+            assert.equal(error.message, `Invalid Parameter "start" it should be a Map instance.`);
+            error = await assert.rejected(async () => Matrix.rangeRead(undefined, new Map(), () => { }));
+            assert.equal(error.message, `Invalid Parameter "start" it should be a Map instance.`);
+            error = await assert.rejected(async () => Matrix.rangeRead([], new Map(), () => { }));
+            assert.equal(error.message, `Invalid Parameter "start" it should be a Map instance.`);
+
+            error = await assert.rejected(async () => Matrix.rangeRead(new Map(), null, () => { }));
+            assert.equal(error.message, `Invalid Parameter "stop" it should be a Map instance.`);
+            error = await assert.rejected(async () => Matrix.rangeRead(new Map(), undefined, () => { }));
+            assert.equal(error.message, `Invalid Parameter "stop" it should be a Map instance.`);
+            error = await assert.rejected(async () => Matrix.rangeRead(new Map(), [], () => { }));
+            assert.equal(error.message, `Invalid Parameter "stop" it should be a Map instance.`);
+
+            error = await assert.rejected(async () => Matrix.rangeRead(new Map(), new Map(), undefined));
+            assert.equal(error.message, `Invalid Parameter "dataCallback" it should be a function.`);
+            error = await assert.rejected(async () => Matrix.rangeRead(new Map(), new Map(), null));
+            assert.equal(error.message, `Invalid Parameter "dataCallback" it should be a function.`);
+            error = await assert.rejected(async () => Matrix.rangeRead(new Map(), new Map(), {}));
+            assert.equal(error.message, `Invalid Parameter "dataCallback" it should be a function.`);
+
+        });
+
+        it('should only allow equal number of dimensions for start and stop parameters', async function () {
+            const dimensionNameX = 'X';
+            const dimensionNameY = 'Y';
+            const partitionSizeOfDimension = 5;
+            const X = 0n;
+            const Y = 0n;
+            const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
+
+            let error = await assert.rejected(async () => Matrix.rangeRead(new Map([[dimensionNameX, partitionSizeOfDimension]]), new Map(), () => { }));
+            assert.equal(error.message, `Invalid Parameter "start"(1) or "stop"(0); they should match on number of dimensions.`);
+
+            error = await assert.rejected(async () => Matrix.rangeRead(new Map(), new Map([[dimensionNameX, partitionSizeOfDimension]]), () => { }));
+            assert.equal(error.message, `Invalid Parameter "start"(0) or "stop"(1); they should match on number of dimensions.`);
+        });
+
+        it('should only allow undefined or numerically incorect indexes for start and stop parameters', async function () {
+            const dimensionNameX = 'X';
+            const dimensionNameY = 'Y';
+            const partitionSizeOfDimension = 5;
+            const X = 0n;
+            const Y = 0n;
+            const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
+
+            let error = await assert.rejected(async () => Matrix.rangeRead(new Map([[dimensionNameX, -1]]), new Map([[dimensionNameX, 0]]), () => { }));
+            assert.equal(error.message, `Parameter "start", has an invalid index "-1" for "X" dimension which should be between 0 and 9223372036854775807.`);
+            error = await assert.rejected(async () => Matrix.rangeRead(new Map([[dimensionNameX, undefined]]), new Map([[dimensionNameX, 0]]), () => { }));
+            assert.equal(error.message, `Parameter "start", has an invalid index "undefined" for "X" dimension which should be between 0 and 9223372036854775807.`);
+            error = await assert.rejected(async () => Matrix.rangeRead(new Map([[dimensionNameX, null]]), new Map([[dimensionNameX, 0]]), () => { }));
+            assert.equal(error.message, `Parameter "start", has an invalid index "null" for "X" dimension which should be between 0 and 9223372036854775807.`);
+             error = await assert.rejected(async () => Matrix.rangeRead(new Map([[dimensionNameX, 9223372036854775807n+1n]]), new Map([[dimensionNameX, 0]]), () => { }));
+            assert.equal(error.message, `Parameter "start", has an invalid index "9223372036854775808" for "X" dimension which should be between 0 and 9223372036854775807.`);
+            error = await assert.rejected(async () => Matrix.rangeRead(new Map([[dimensionNameX, {}]]), new Map([[dimensionNameX, 0]]), () => { }));
+            assert.equal(error.message, `Cannot convert [object Object] to a BigInt`);
+
+
+            error = await assert.rejected(async () => Matrix.rangeRead(new Map([[dimensionNameX, 0]]), new Map([[dimensionNameX, -1]]), () => { }));
+            assert.equal(error.message, `Parameter "stop", has an invalid index "-1" for "X" dimension which should be between 0 and 9223372036854775807.`);
+            error = await assert.rejected(async () => Matrix.rangeRead(new Map([[dimensionNameX, 0]]), new Map([[dimensionNameX, undefined]]), () => { }));
+            assert.equal(error.message, `Parameter "stop", has an invalid index "undefined" for "X" dimension which should be between 0 and 9223372036854775807.`);
+            error = await assert.rejected(async () => Matrix.rangeRead(new Map([[dimensionNameX, 0]]), new Map([[dimensionNameX, null]]), () => { }));
+            assert.equal(error.message, `Parameter "stop", has an invalid index "null" for "X" dimension which should be between 0 and 9223372036854775807.`);
+            error = await assert.rejected(async () => Matrix.rangeRead(new Map([[dimensionNameX, 0]]), new Map([[dimensionNameX, 9223372036854775807n+1n]]), () => { }));
+            assert.equal(error.message, `Parameter "stop", has an invalid index "9223372036854775808" for "X" dimension which should be between 0 and 9223372036854775807.`);
+            error = await assert.rejected(async () => Matrix.rangeRead(new Map([[dimensionNameX, 0]]), new Map([[dimensionNameX, {}]]), () => { }));
+            assert.equal(error.message, `Cannot convert [object Object] to a BigInt`);
+            error = await assert.rejected(async () => Matrix.rangeRead(new Map([[dimensionNameX, 10]]), new Map([[dimensionNameX, 5]]), () => { }));
+            assert.equal(error.message, `Parameter "stop", has an invalid index "5" for "X" dimension which should be between 10 and 9223372036854775807.`);
+
+        });
+
+        it('should only allow dimensions which are already defined', async function () {
+            const dimensionNameX = 'X';
+            const dimensionNameY = 'Y';
+            const partitionSizeOfDimension = 5;
+            const X = 0n;
+            const Y = 0n;
+            const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
+
+            let error = await assert.rejected(async () => Matrix.rangeRead(new Map([['L', -1]]), new Map([[dimensionNameX, 0]]), () => { }));
+            assert.equal(error.message, `Parameter "start", has an invalid dimension("L") which has no defined length or is a new dimension.`);
+          
+            error = await assert.rejected(async () => Matrix.rangeRead(new Map([[dimensionNameX, 0]]), new Map([['L', -1]]), () => { }));
+            assert.equal(error.message, `Parameter "stop", has an invalid index "undefined" for "X" dimension which should be between 0 and 9223372036854775807.`);
+           
+        });
+    });
+
     describe('#rangeRead', function () {
 
         it('should resolve to correct address for left edge of the section', async function () {
             //Setup
-            const dimensionNameX = 'X';
+            const dimensionNameX = 'X'; 1
             const dimensionNameY = 'Y';
             const partitionSizeOfDimension = 5;
             const X = 0n;

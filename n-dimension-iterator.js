@@ -169,7 +169,7 @@
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 
-var level = require('level-party')
+var level = require('level')
 var db = level(__dirname + '/data', { keyEncoding: 'binary', valueEncoding: 'json' })
 const start = Buffer.allocUnsafe(8);
 start.writeBigInt64BE(1n, 0);
@@ -186,7 +186,8 @@ let x = new Promise((a, r) => {
         })
         .on('close', function () {
             console.log('Stream closed')
-            a();
+            //setTimeout(a,5000); 
+        a();
         })
         .on('end', function () {
             console.log('Stream ended')
@@ -196,3 +197,34 @@ let x = new Promise((a, r) => {
 x.then((e) =>
     console.log("Done")
 )
+
+
+// const dimensions = new Map([['x', 5n], ['y', 5n], ['z', 5n]]);
+// let address = 49n;
+
+//let dimensionFactor = 1n;
+// dimensions.forEach((length, name) => {
+//     if (dimensionFactor === 1n) {
+//         console.log(`${name}:${address % length} D:${dimensionFactor}`);
+//     }
+//     else {
+//         console.log(`${name}:${address/dimensionFactor} D:${dimensionFactor}`);
+//         address = address % dimensionFactor;
+//     }
+//     dimensionFactor *= length;
+// }
+
+
+// let reverseDimensions = Array.from(dimensions.keys()).reverse();
+// for (let index = 0; index < reverseDimensions.length; index++) {
+//     const name = reverseDimensions[index];
+//     const sliceIndex = index + 1;
+//     if (sliceIndex == reverseDimensions.length) {
+//         console.log(`${name}:${address % dimensions.get(name)}`);
+//     }
+//     else {
+//         const dimensionFactor = reverseDimensions.slice(index + 1).reduce((acc, n) => acc * dimensions.get(n), 1n);
+//         console.log(`${name}:${address / dimensionFactor} D:${dimensionFactor}`);
+//         address = address % dimensionFactor;
+//     }
+// }

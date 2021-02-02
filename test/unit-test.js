@@ -583,7 +583,7 @@ describe('level-matrix', function () {
                 }
             }
             mockDbInstance.createReadStream = sinon.fake(selfClosingStream(5));
-            mockDbInstance.get = sinon.fake.resolves(undefined);
+            mockDbInstance.get = sinon.fake((key, callback) => callback(undefined, undefined));
             const actualCallBack = sinon.fake();
 
             //Invoke

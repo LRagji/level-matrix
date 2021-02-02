@@ -8,11 +8,12 @@ module.exports = class Matrix {
     #leveldbFactory;
     #convertCoordinatesToSortedQueries;
     #convertCoordinatesToOptimizedQueries;
-    #dimensions;
+    #dimensions = new Map();
     #options = { keyEncoding: 'binary', valueEncoding: 'json' };
     #sectionResolver = (cordinates) => { throw new Error("Dimensions not configured corectly."); };
     #dimensionForLoop;
     #dataRead;
+    #addressToAbsoluteCoordinates;
 
     //We are using Map for dimensions cause it retains insertion order of the keys which helps us define which dimension will have be first for Row-Major-Order
     constructor(leveldbResolver, dimensions = new Map([['x', 10], ['y', 10]])) {
@@ -24,6 +25,7 @@ module.exports = class Matrix {
         this.#dataRead = this.dataRead.bind(this);
         this.#convertCoordinatesToSortedQueries = this.convertCoordinatesToSortedQueries.bind(this);
         this.#convertCoordinatesToOptimizedQueries = this.convertCoordinatesToOptimizedQueries.bind(this);
+        this.#addressToAbsoluteCoordinates = this.addressToAbsoluteCoordinates.bind(this);
 
         if (leveldbResolver == null) throw new Error(`Parameter "leveldbResolver", cannot be null.`);
         if (dimensions.size === 0) throw new Error(`Parameter "dimensions", cannot be empty.`);
@@ -31,10 +33,10 @@ module.exports = class Matrix {
         this.#MaximumIndexPerDimension = this.#MaxKeySize / BigInt(dimensions.size);
         dimensions.forEach((maximumLength, dimensionName) => {
             if (BigInt(maximumLength) > this.#MaximumIndexPerDimension) throw new Error(`Parameter "dimensions", has an invalid dimension length for "${dimensionName}" which should not exceed ${this.#MaximumIndexPerDimension}.`)
+            this.#dimensions.set(dimensionName, BigInt(maximumLength));
         });
 
         this.#leveldbFactory = leveldbResolver;
-        this.#dimensions = dimensions;
         this.#sectionResolver = (cordinates) => {
             if (cordinates.size !== dimensions.size) throw new Error(`Cannot calculate address: cordinates should match dimensions length ${dimensions.size}.`);
             let address = 0n;
@@ -93,7 +95,7 @@ module.exports = class Matrix {
             }
             else {
                 const coordinates = new Map(dimensions.map(e => [e.name, e.counter]));
-                console.log(`${dimensions.map(e => e.counter).join(',')}`);
+                //console.log(`${dimensions.map(e => e.counter).join(',')}`);
                 callbackAccumulator = callback(callbackAccumulator, coordinates);
             }
         }
@@ -101,13 +103,21 @@ module.exports = class Matrix {
     }
 
     async rangeRead(start, stop, dataCallback, sorted = false) {
+        const temp= new Map();
+        start.forEach((value,key)=>temp.set(key,BigInt(value)));
+        start= new Map(temp);
+        temp.clear();
+        stop.forEach((value,key)=>temp.set(key,BigInt(value)));
+        stop= new Map(temp);
+        temp.clear();
+
         const range = [];
         start.forEach((dimensionStart, dimensionKey) => {
             range.push({
                 name: dimensionKey,
                 start: dimensionStart,
                 stop: stop.get(dimensionKey),
-                incrementby: 1,
+                incrementby: 1n,
                 sectionLength: this.#dimensions.get(dimensionKey)
             })
         });
@@ -162,34 +172,31 @@ module.exports = class Matrix {
     }
 
     async dataRead(queries, dataCallback) {
+        const startKeyBuffer = Buffer.allocUnsafe(8);
+        const endKeyBuffer = Buffer.allocUnsafe(8);
         for (let index = 0; index < queries.length; index++) {
             const query = queries[index];
-            console.log(`Section: ${query.name} From: ${query.start} To: ${query.end} Cordinates: ${Array.from(query.startCoordinates.keys()).map(k => k + " " + query.startCoordinates.get(k)).join(',')}`);
+            //console.log(`Section: ${query.name} From: ${query.start} To: ${query.end} Cordinates: ${Array.from(query.startCoordinates.keys()).map(k => k + " " + query.startCoordinates.get(k)).join(',')}`);
             const dbInstance = await this.#leveldbFactory(query.name, this.#options);
-            const startKeyBuffer = Buffer.allocUnsafe(8);
-            const endKeyBuffer = Buffer.allocUnsafe(8);
             startKeyBuffer.writeBigInt64BE(query.start, 0);
             endKeyBuffer.writeBigInt64BE(query.end, 0);
             if (query.start === query.end) {
                 let data = await new Promise((complete, reject) => {
-                    dbInstance.get(startKeyBuffer, (err, value) => (err == undefined || err.type == 'NotFoundError') ? complete(value) : reject(err));
+                    //Invoke the callback only when no error is present, donot invoke if the error is not defined keeping it consistent with range call.
+                    dbInstance.get(startKeyBuffer, (err, value) => (err == undefined) ? complete(value) : (err.type == 'NotFoundError' ? undefined : reject(err)));
                 })
-                await dataCallback(data, index, queries.length, query);
+                const key = this.#addressToAbsoluteCoordinates(query.start, query.startCoordinates);
+                await dataCallback(key, data, index, queries.length);
             }
             else {
                 await new Promise((complete, reject) => {
                     let completed = false;
                     dbInstance.createReadStream({ gte: startKeyBuffer, lte: endKeyBuffer })
-                        .on('data', async function (data) {
-                            //console.log(partitionKey + ": " + data.key, '=', data.value)
+                        .on('data', (async function (data) {
                             data.key = Buffer.from(data.key.buffer).readBigInt64BE(0)
-                            // let Y = alias.bigIntCeil(data.key, alias.width);
-                            // let X = data.key %;
-                            // X = X + (offsetX * alias.width);
-                            // Y = Y + (offsetY * alias.height);
-                            // cellData.push({ x: X, y: Y, v: data.value })
-                            await dataCallback(data, index, queries.length, query);
-                        })
+                            data.key = this.#addressToAbsoluteCoordinates(data.key, query.startCoordinates);
+                            await dataCallback(data.key, data.value, index, queries.length);
+                        }).bind(this))
                         .on('error', function (err) {
                             console.log(query.name + ": " + 'Oh my!', err)
                             reject(err);
@@ -212,4 +219,25 @@ module.exports = class Matrix {
             }
         }
     }
+
+    addressToAbsoluteCoordinates(address, sectionStart) {
+        let returnCoordinates = new Map();
+        let reverseDimensions = Array.from(this.#dimensions.keys()).reverse();
+        for (let index = 0; index < reverseDimensions.length; index++) {
+            const dimensionName = reverseDimensions[index];
+            const sliceIndex = index + 1;
+            let dimensionAbsolute;
+            if (sliceIndex == reverseDimensions.length) {
+                dimensionAbsolute = (address % this.#dimensions.get(dimensionName)) + sectionStart.get(dimensionName);
+            }
+            else {
+                const dimensionFactor = reverseDimensions.slice(index + 1).reduce((acc, n) => acc * this.#dimensions.get(n), 1n);
+                dimensionAbsolute = (address % dimensionFactor) + sectionStart.get(dimensionName);
+                address = address % dimensionFactor;
+            }
+            returnCoordinates.set(dimensionName, dimensionAbsolute);
+        }
+        return returnCoordinates;
+    }
+
 }

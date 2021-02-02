@@ -33,6 +33,7 @@
     "level-party": "4.0.0"
   },
   "dependencies": {
+    "level": "^6.0.1",
     "level-party": "^4.0.0"
   }
 }

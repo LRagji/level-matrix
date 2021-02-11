@@ -559,6 +559,9 @@ describe('level-matrix', function () {
 
     });
 
+
+    //---------------------------------------------------------------------------------------- Read Tests ----------------------------------------------------------------------------------
+
     describe('#rangeRead General Validations', function () {
 
         it('should not allow nulls or undefined for start, stop and datacallback', async function () {
@@ -662,7 +665,7 @@ describe('level-matrix', function () {
 
     describe('#rangeRead', function () {
 
-        it('should resolve to correct address for left edge of the section', async function () {
+        it('should resolve to correct address for left edge of the section for single sorted read', async function () {
             //Setup
             const dimensionNameX = 'X'; 1
             const dimensionNameY = 'Y';
@@ -685,13 +688,50 @@ describe('level-matrix', function () {
             }
             mockDbInstance.createReadStream = sinon.fake(selfClosingStream(5));
             mockDbInstance.get = sinon.fake((key, callback) => callback(undefined, undefined));
-            const actualCallBack = sinon.fake();
+            const dataCallBack = sinon.fake.resolves();
 
             //Invoke
-            await Matrix.rangeRead(new Map([[dimensionNameX, 0], [dimensionNameY, 0]]), new Map([[dimensionNameX, 20], [dimensionNameY, 1]]), console.log, true);
+            await Matrix.rangeRead(new Map([[dimensionNameX, X], [dimensionNameY, Y]]), new Map([[dimensionNameX, X], [dimensionNameY, Y]]),dataCallBack,true);
 
             //Expectations
-            //sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
+            sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
+            sinon.assert.calledOnceWithMatch(mockDbInstance.get, expectedKeyBuffer);
+            sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), undefined,0,1);
+
+        });
+
+        it('should resolve to correct address for right edge of the section for single sorted read', async function () {
+            //Setup
+            const dimensionNameX = 'X'; 1
+            const dimensionNameY = 'Y';
+            const partitionSizeOfDimension = 5;
+            const X = 4n;
+            const Y = 4n;
+            const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
+            const expectedPartitionKey = `${(X / BigInt(partitionSizeOfDimension)).toString()}-${(Y / BigInt(partitionSizeOfDimension)).toString()}`;
+            const expectedOptions = { keyEncoding: 'binary', valueEncoding: 'json' };
+            const expectedKeyBuffer = Buffer.allocUnsafe(8);
+            const relativeAddX = BigInt(X) - ((X / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
+            const relativeAddY = BigInt(Y) - ((Y / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
+            expectedKeyBuffer.writeBigInt64BE((BigInt(partitionSizeOfDimension) * relativeAddY) + relativeAddX, 0);
+            const selfClosingStream = (time) => {
+                return () => {
+                    const mockedStream = new stream.PassThrough();
+                    setTimeout(() => mockedStream.destroy(), time);
+                    return mockedStream;
+                }
+            }
+            mockDbInstance.createReadStream = sinon.fake(selfClosingStream(5));
+            mockDbInstance.get = sinon.fake((key, callback) => callback(undefined, undefined));
+            const dataCallBack = sinon.fake.resolves();
+
+            //Invoke
+            await Matrix.rangeRead(new Map([[dimensionNameX, X], [dimensionNameY, Y]]), new Map([[dimensionNameX, X], [dimensionNameY, Y]]),dataCallBack,true);
+
+            //Expectations
+            sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
+            sinon.assert.calledOnceWithMatch(mockDbInstance.get, expectedKeyBuffer);
+            sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), undefined,0,1);
 
         });
 

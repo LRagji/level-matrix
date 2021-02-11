@@ -41,7 +41,7 @@ module.exports = class Matrix {
             if (cordinates.size !== dimensions.size) throw new Error(`Cannot calculate address: cordinates should match dimensions length ${dimensions.size}.`);
             let address = 0n;
             let dimensionFactor = 1n;
-            let sectionName = [];
+            let sectionStart = new Map();
             dimensions.forEach((length, dimensionName) => {
                 length = BigInt(length);
                 let cordinate = cordinates.get(dimensionName);
@@ -49,12 +49,12 @@ module.exports = class Matrix {
                 if (cordinate < this.#MinimumIndexPerDimension || cordinate > this.#MaximumIndexPerDimension) throw new Error(`Cannot calculate address: Invalid cordinate for "${dimensionName}" dimension, value (${cordinate}) has to be between ${this.#MinimumIndexPerDimension} to ${this.#MaximumIndexPerDimension}.`);
                 cordinate = BigInt(cordinate);
                 const section = cordinate / length; //Since it is Bigint it will always floor the division which is what we want here.
-                sectionName.push(section);
+                sectionStart.set(dimensionName, section);
                 cordinate -= (section * length);
                 address += cordinate * dimensionFactor;
                 dimensionFactor *= length;
             });
-            return { "address": address, "name": sectionName.join('-') };
+            return { "address": address, "name": Array.from(sectionStart.values()).join('-'), "sectionStart": sectionStart };
         };
     }
 
@@ -155,11 +155,11 @@ module.exports = class Matrix {
                 accumulator[accumulator.length - 1].end = sectionDetails.address;
             }
             else {
-                accumulator.push({ "name": sectionDetails.name, "startCoordinates": coordinates, "start": sectionDetails.address, "end": sectionDetails.address });
+                accumulator.push({ "name": sectionDetails.name, "startCoordinates": coordinates, "start": sectionDetails.address, "end": sectionDetails.address, "sectionStart": sectionDetails.sectionStart });
             }
         }
         else {
-            accumulator.push({ "name": sectionDetails.name, "startCoordinates": coordinates, "start": sectionDetails.address, "end": sectionDetails.address });
+            accumulator.push({ "name": sectionDetails.name, "startCoordinates": coordinates, "start": sectionDetails.address, "end": sectionDetails.address, "sectionStart": sectionDetails.sectionStart });
         }
         return accumulator;
     }
@@ -180,14 +180,14 @@ module.exports = class Matrix {
                 }
             }
             if (lastNameMatchingIndex === -1) {
-                accumulator.push({ "name": sectionDetails.name, "startCoordinates": coordinates, "start": sectionDetails.address, "end": sectionDetails.address });
+                accumulator.push({ "name": sectionDetails.name, "startCoordinates": coordinates, "start": sectionDetails.address, "end": sectionDetails.address, "sectionStart": sectionDetails.sectionStart });
             }
             else if (contigiousRangeFound == false) {
-                accumulator.splice(lastNameMatchingIndex, 0, { "name": sectionDetails.name, "startCoordinates": coordinates, "start": sectionDetails.address, "end": sectionDetails.address });
+                accumulator.splice(lastNameMatchingIndex, 0, { "name": sectionDetails.name, "startCoordinates": coordinates, "start": sectionDetails.address, "end": sectionDetails.address, "sectionStart": sectionDetails.sectionStart });
             }
         }
         else {
-            accumulator.push({ "name": sectionDetails.name, "startCoordinates": coordinates, "start": sectionDetails.address, "end": sectionDetails.address });
+            accumulator.push({ "name": sectionDetails.name, "startCoordinates": coordinates, "start": sectionDetails.address, "end": sectionDetails.address, "sectionStart": sectionDetails.sectionStart });
         }
         return accumulator;
     }
@@ -206,7 +206,7 @@ module.exports = class Matrix {
                     //Invoke the callback only when no error is present, donot invoke if the error is not defined keeping it consistent with range call.
                     dbInstance.get(startKeyBuffer, (err, value) => (err == undefined) ? complete(value) : (err.type == 'NotFoundError' ? undefined : reject(err)));
                 })
-                const key = this.#addressToAbsoluteCoordinates(query.start, query.startCoordinates);
+                const key = this.#addressToAbsoluteCoordinates(query.start, query.sectionStart);
                 await dataCallback(key, data, index, queries.length);
             }
             else {
@@ -215,7 +215,7 @@ module.exports = class Matrix {
                     dbInstance.createReadStream({ gte: startKeyBuffer, lte: endKeyBuffer })
                         .on('data', (async function (data) {
                             data.key = Buffer.from(data.key.buffer).readBigInt64BE(0)
-                            data.key = this.#addressToAbsoluteCoordinates(data.key, query.startCoordinates);
+                            data.key = this.#addressToAbsoluteCoordinates(data.key, query.sectionStart);
                             await dataCallback(data.key, data.value, index, queries.length);
                         }).bind(this))
                         .on('error', function (err) {

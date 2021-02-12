@@ -54,7 +54,13 @@ module.exports = class Matrix {
                 address += cordinate * dimensionFactor;
                 dimensionFactor *= length;
             });
-            return { "address": address, "name": Array.from(sectionStart.values()).join('-'), "sectionStart": sectionStart };
+            let sectionName = '';
+            let sectionStartCordinates = new Map();
+            sectionStart.forEach((value, key) => {
+                sectionName += (sectionName === '' ? '' : '-') + value;
+                sectionStartCordinates.set(key, value * BigInt(dimensions.get(key)));
+            })
+            return { "address": address, "name": sectionName, "sectionStart": sectionStartCordinates };
         };
     }
 

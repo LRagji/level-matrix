@@ -220,7 +220,7 @@ module.exports = class Matrix {
                     let completed = false;
                     dbInstance.createReadStream({ gte: startKeyBuffer, lte: endKeyBuffer })
                         .on('data', (async function (data) {
-                            data.key = Buffer.from(data.key.buffer).readBigInt64BE(0)
+                            data.key = data.key.readBigInt64BE(0)
                             data.key = this.#addressToAbsoluteCoordinates(data.key, query.sectionStart);
                             await dataCallback(data.key, data.value, index, queries.length);
                         }).bind(this))
@@ -258,8 +258,8 @@ module.exports = class Matrix {
                 dimensionAbsolute = (address % this.#dimensions.get(dimensionName)) + sectionStart.get(dimensionName);
             }
             else {
-                const dimensionFactor = reverseDimensions.slice(index + 1).reduce((acc, n) => acc * this.#dimensions.get(n), 1n);
-                dimensionAbsolute = (address % dimensionFactor) + sectionStart.get(dimensionName);
+                const dimensionFactor = reverseDimensions.slice(sliceIndex).reduce((acc, n) => acc * this.#dimensions.get(n), 1n); //5
+                dimensionAbsolute = (address / dimensionFactor) + sectionStart.get(dimensionName); //1
                 address = address % dimensionFactor;
             }
             returnCoordinates.set(dimensionName, dimensionAbsolute);

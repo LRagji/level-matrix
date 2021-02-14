@@ -18,9 +18,45 @@ assert.rejected = async (fn) => {
     return error;
 }
 
+// sinon.getMatchingFake = (fake, ...args) => fake.getCalls().find(invocation => invocation.calledWith(...args));
+sinon.getMatchingFake = (invocations, remove = true, ...args) => {
+    let matchingInvocation;
+    const index = invocations.findIndex(invocation => invocation.calledWith(...args));
+    if (index === -1) {
+        sinon.assert.fail(`Cannot find invocation with these arguments.`)
+    }
+    else {
+        matchingInvocation = invocations[index];
+        if (remove === true) {
+            invocations.splice(index, 1)
+        }
+    }
+    return matchingInvocation;
+};
+sinon.assert.fakeCallOrder = (...fakes) => fakes.reduce((acc, e, idx) => e.calledAfter(acc) ? e : sinon.assert.fail(`Invalid Call order, Invocation at ${idx} & previous was not in order.`));
+sinon.getBufferForBigInt = (value) => {
+    const returnBuffer = Buffer.allocUnsafe(8);
+    returnBuffer.writeBigInt64BE(value);
+    return returnBuffer;
+}
+
+
 let mockDbInstance = {
     batch: sinon.fake.resolves(),
-    createReadStream: sinon.fake.throws("Did not set up read function")
+    get: sinon.fake((key, callback) => callback(undefined, key.readBigInt64BE(0))),
+    createReadStream: sinon.fake((query) => {
+        const mockedStream = new stream.PassThrough({ objectMode: true });
+        setTimeout(() => {
+            query.gte = Buffer.from(query.gte).readBigInt64BE(0);
+            query.lte = Buffer.from(query.lte).readBigInt64BE(0);
+            for (let addressCounter = query.gte; addressCounter <= query.lte; addressCounter++) {
+                mockedStream.write({ key: sinon.getBufferForBigInt(addressCounter), value: addressCounter });
+            }
+            mockedStream.destroy();
+        }, 5);
+        return mockedStream;
+    })
+
 };
 let mockResolver = sinon.fake.resolves(mockDbInstance);
 
@@ -36,7 +72,7 @@ describe('level-matrix', function () {
         sinon.reset();
     });
 
-    describe.skip('#constructor', function () {
+    describe('#constructor', function () {
         it('should throw when dimesions is empty', async function () {
             assert.isNotNull(new matrixType(mockResolver, undefined), `Should default when undefined is passed`);
             let error = await assert.rejected(async () => new matrixType(mockResolver, new Map()));
@@ -60,7 +96,7 @@ describe('level-matrix', function () {
         });
     });
 
-    describe.skip('#batchPut General Validations', function () {
+    describe('#batchPut General Validations', function () {
 
         it('Parameter "data" should not allow non array values', async function () {
             //Setup
@@ -161,7 +197,7 @@ describe('level-matrix', function () {
         });
     });
 
-    describe.skip('#batchPut 1 Dimension', function () {
+    describe('#batchPut 1 Dimension', function () {
 
         //1st Partition
         it('should work with 1 dimension within left edge of first partition', async function () {
@@ -346,7 +382,7 @@ describe('level-matrix', function () {
 
     });
 
-    describe.skip('#batchPut 2 Dimension', function () {
+    describe('#batchPut 2 Dimension', function () {
 
         //1st Partition
         it('should work with 2 dimension within left edge of first partition', async function () {
@@ -688,8 +724,8 @@ describe('level-matrix', function () {
                         return mockedStream;
                     }
                 }
-                mockDbInstance.createReadStream = sinon.fake(selfClosingStream(5));
-                mockDbInstance.get = sinon.fake((key, callback) => callback(undefined, undefined));
+                // mockDbInstance.createReadStream = sinon.fake(selfClosingStream(5));
+                // mockDbInstance.get = sinon.fake((key, callback) => callback(undefined, undefined));
                 const dataCallBack = sinon.fake.resolves();
 
                 //Invoke
@@ -698,7 +734,7 @@ describe('level-matrix', function () {
                 //Expectations
                 sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
                 sinon.assert.calledOnceWithMatch(mockDbInstance.get, expectedKeyBuffer);
-                sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), undefined, 0, 1);
+                sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), 0n, 0, 1);
 
             });
 
@@ -723,8 +759,8 @@ describe('level-matrix', function () {
                         return mockedStream;
                     }
                 }
-                mockDbInstance.createReadStream = sinon.fake(selfClosingStream(5));
-                mockDbInstance.get = sinon.fake((key, callback) => callback(undefined, undefined));
+                // mockDbInstance.createReadStream = sinon.fake(selfClosingStream(5));
+                // mockDbInstance.get = sinon.fake((key, callback) => callback(undefined, undefined));
                 const dataCallBack = sinon.fake.resolves();
 
                 //Invoke
@@ -733,7 +769,7 @@ describe('level-matrix', function () {
                 //Expectations
                 sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
                 sinon.assert.calledOnceWithMatch(mockDbInstance.get, expectedKeyBuffer);
-                sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), undefined, 0, 1);
+                sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), 24n, 0, 1);
 
             });
 
@@ -758,8 +794,8 @@ describe('level-matrix', function () {
                         return mockedStream;
                     }
                 }
-                mockDbInstance.createReadStream = sinon.fake(selfClosingStream(5));
-                mockDbInstance.get = sinon.fake((key, callback) => callback(undefined, undefined));
+                // mockDbInstance.createReadStream = sinon.fake(selfClosingStream(5));
+                // mockDbInstance.get = sinon.fake((key, callback) => callback(undefined, undefined));
                 const dataCallBack = sinon.fake.resolves();
 
                 //Invoke
@@ -768,7 +804,7 @@ describe('level-matrix', function () {
                 //Expectations
                 sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
                 sinon.assert.calledOnceWithMatch(mockDbInstance.get, expectedKeyBuffer);
-                sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), undefined, 0, 1);
+                sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), 12n, 0, 1);
 
             });
 
@@ -786,15 +822,6 @@ describe('level-matrix', function () {
                 const relativeAddX = BigInt(X) - ((X / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
                 const relativeAddY = BigInt(Y) - ((Y / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
                 expectedKeyBuffer.writeBigInt64BE((BigInt(partitionSizeOfDimension) * relativeAddY) + relativeAddX, 0);
-                const selfClosingStream = (time) => {
-                    return () => {
-                        const mockedStream = new stream.PassThrough();
-                        setTimeout(() => mockedStream.destroy(), time);
-                        return mockedStream;
-                    }
-                }
-                mockDbInstance.createReadStream = sinon.fake(selfClosingStream(5));
-                mockDbInstance.get = sinon.fake((key, callback) => callback(undefined, undefined));
                 const dataCallBack = sinon.fake.resolves();
 
                 //Invoke
@@ -803,7 +830,7 @@ describe('level-matrix', function () {
                 //Expectations
                 sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
                 sinon.assert.calledOnceWithMatch(mockDbInstance.get, expectedKeyBuffer);
-                sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), undefined, 0, 1);
+                sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), 0n, 0, 1);
 
             });
 
@@ -821,15 +848,6 @@ describe('level-matrix', function () {
                 const relativeAddX = BigInt(X) - ((X / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
                 const relativeAddY = BigInt(Y) - ((Y / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
                 expectedKeyBuffer.writeBigInt64BE((BigInt(partitionSizeOfDimension) * relativeAddY) + relativeAddX, 0);
-                const selfClosingStream = (time) => {
-                    return () => {
-                        const mockedStream = new stream.PassThrough();
-                        setTimeout(() => mockedStream.destroy(), time);
-                        return mockedStream;
-                    }
-                }
-                mockDbInstance.createReadStream = sinon.fake(selfClosingStream(5));
-                mockDbInstance.get = sinon.fake((key, callback) => callback(undefined, undefined));
                 const dataCallBack = sinon.fake.resolves();
 
                 //Invoke
@@ -838,7 +856,7 @@ describe('level-matrix', function () {
                 //Expectations
                 sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
                 sinon.assert.calledOnceWithMatch(mockDbInstance.get, expectedKeyBuffer);
-                sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), undefined, 0, 1);
+                sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), 0n, 0, 1);
 
             });
 
@@ -856,15 +874,6 @@ describe('level-matrix', function () {
                 const relativeAddX = BigInt(X) - ((X / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
                 const relativeAddY = BigInt(Y) - ((Y / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
                 expectedKeyBuffer.writeBigInt64BE((BigInt(partitionSizeOfDimension) * relativeAddY) + relativeAddX, 0);
-                const selfClosingStream = (time) => {
-                    return () => {
-                        const mockedStream = new stream.PassThrough();
-                        setTimeout(() => mockedStream.destroy(), time);
-                        return mockedStream;
-                    }
-                }
-                mockDbInstance.createReadStream = sinon.fake(selfClosingStream(5));
-                mockDbInstance.get = sinon.fake((key, callback) => callback(undefined, undefined));
                 const dataCallBack = sinon.fake.resolves();
 
                 //Invoke
@@ -873,7 +882,7 @@ describe('level-matrix', function () {
                 //Expectations
                 sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
                 sinon.assert.calledOnceWithMatch(mockDbInstance.get, expectedKeyBuffer);
-                sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), undefined, 0, 1);
+                sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), 24n, 0, 1);
 
             });
 
@@ -891,15 +900,6 @@ describe('level-matrix', function () {
                 const relativeAddX = BigInt(X) - ((X / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
                 const relativeAddY = BigInt(Y) - ((Y / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
                 expectedKeyBuffer.writeBigInt64BE((BigInt(partitionSizeOfDimension) * relativeAddY) + relativeAddX, 0);
-                const selfClosingStream = (time) => {
-                    return () => {
-                        const mockedStream = new stream.PassThrough();
-                        setTimeout(() => mockedStream.destroy(), time);
-                        return mockedStream;
-                    }
-                }
-                mockDbInstance.createReadStream = sinon.fake(selfClosingStream(5));
-                mockDbInstance.get = sinon.fake((key, callback) => callback(undefined, undefined));
                 const dataCallBack = sinon.fake.resolves();
 
                 //Invoke
@@ -908,7 +908,7 @@ describe('level-matrix', function () {
                 //Expectations
                 sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
                 sinon.assert.calledOnceWithMatch(mockDbInstance.get, expectedKeyBuffer);
-                sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), undefined, 0, 1);
+                sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), 12n, 0, 1);
 
             });
 
@@ -926,15 +926,6 @@ describe('level-matrix', function () {
                 const relativeAddX = BigInt(X) - ((X / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
                 const relativeAddY = BigInt(Y) - ((Y / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
                 expectedKeyBuffer.writeBigInt64BE((BigInt(partitionSizeOfDimension) * relativeAddY) + relativeAddX, 0);
-                const selfClosingStream = (time) => {
-                    return () => {
-                        const mockedStream = new stream.PassThrough();
-                        setTimeout(() => mockedStream.destroy(), time);
-                        return mockedStream;
-                    }
-                }
-                mockDbInstance.createReadStream = sinon.fake(selfClosingStream(5));
-                mockDbInstance.get = sinon.fake((key, callback) => callback(undefined, undefined));
                 const dataCallBack = sinon.fake.resolves();
 
                 //Invoke
@@ -943,7 +934,7 @@ describe('level-matrix', function () {
                 //Expectations
                 sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
                 sinon.assert.calledOnceWithMatch(mockDbInstance.get, expectedKeyBuffer);
-                sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), undefined, 0, 1);
+                sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), 0n, 0, 1);
 
             });
         });
@@ -960,28 +951,6 @@ describe('level-matrix', function () {
                 const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
                 const expectedPartitionKey = `${(X / BigInt(partitionSizeOfDimension)).toString()}-${(Y / BigInt(partitionSizeOfDimension)).toString()}`;
                 const expectedOptions = { keyEncoding: 'binary', valueEncoding: 'json' };
-                const expectedKeyBuffer = Buffer.allocUnsafe(8);
-                const relativeAddX = BigInt(X) - ((X / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
-                const relativeAddY = BigInt(Y) - ((Y / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
-                expectedKeyBuffer.writeBigInt64BE((BigInt(partitionSizeOfDimension) * relativeAddY) + relativeAddX, 0);
-                const selfClosingStream = (time) => {
-                    return (query) => {
-                        const mockedStream = new stream.PassThrough({ objectMode: true });
-                        setTimeout(() => {
-                            query.gte = Buffer.from(query.gte).readBigInt64BE(0);
-                            query.lte = Buffer.from(query.lte).readBigInt64BE(0);
-                            for (let addressCounter = query.gte; addressCounter <= query.lte; addressCounter++) {
-                                let bufferedAddress = Buffer.allocUnsafe(8);
-                                bufferedAddress.writeBigInt64BE(addressCounter, 0);
-                                mockedStream.write({ key: bufferedAddress, value: addressCounter });
-                            }
-                            mockedStream.destroy();
-                        }, time);
-                        return mockedStream;
-                    }
-                }
-                mockDbInstance.createReadStream = sinon.fake(selfClosingStream(5));
-                mockDbInstance.get = sinon.fake((key, callback) => callback(undefined, undefined));
                 const dataCallBack = sinon.fake.resolves();
 
                 //Invoke
@@ -1003,34 +972,113 @@ describe('level-matrix', function () {
                 const X = 0n;
                 const Y = 0n;
                 const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
-                const expectedPartitionKey = `${(X / BigInt(partitionSizeOfDimension)).toString()}-${(Y / BigInt(partitionSizeOfDimension)).toString()}`;
                 const expectedOptions = { keyEncoding: 'binary', valueEncoding: 'json' };
-                const expectedKeyBuffer = Buffer.allocUnsafe(8);
-                const relativeAddX = BigInt(X) - ((X / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
-                const relativeAddY = BigInt(Y) - ((Y / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
-                expectedKeyBuffer.writeBigInt64BE((BigInt(partitionSizeOfDimension) * relativeAddY) + relativeAddX, 0);
-                const selfClosingStream = (time) => {
-                    return (query) => {
-                        const mockedStream = new stream.PassThrough({ objectMode: true });
-                        setTimeout(() => {
-                            query.gte = Buffer.from(query.gte).readBigInt64BE(0);
-                            query.lte = Buffer.from(query.lte).readBigInt64BE(0);
-                            for (let addressCounter = query.gte; addressCounter <= query.lte; addressCounter++) {
-                                let bufferedAddress = Buffer.allocUnsafe(8);
-                                bufferedAddress.writeBigInt64BE(addressCounter, 0);
-                                mockedStream.write({ key: bufferedAddress, value: addressCounter });
-                            }
-                            mockedStream.destroy();
-                        }, time);
-                        return mockedStream;
-                    }
-                }
-                mockDbInstance.createReadStream = sinon.fake(selfClosingStream(5));
-                mockDbInstance.get = sinon.fake((key, callback) => callback(undefined, undefined));
                 const dataCallBack = sinon.fake.resolves();
 
                 //Invoke
                 await Matrix.rangeRead(new Map([[dimensionNameX, X], [dimensionNameY, Y]]), new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]), dataCallBack, true);
+
+                //Expectations
+                sinon.assert.callCount(mockResolver, 12);
+                sinon.assert.callCount(mockDbInstance.createReadStream, 6);
+                sinon.assert.callCount(mockDbInstance.get, 6);
+                let resolverInvocations = mockResolver.getCalls();
+                let createStreamInvocations = mockDbInstance.createReadStream.getCalls();
+                let singleGetInvocations = mockDbInstance.get.getCalls();
+                sinon.assert.fakeCallOrder(
+                    sinon.getMatchingFake(resolverInvocations, true, '0-0', expectedOptions),
+                    sinon.getMatchingFake(createStreamInvocations, true, { gte: 0n, lte: 4n }),
+                    sinon.getMatchingFake(resolverInvocations, true, '1-0', expectedOptions),
+                    sinon.getMatchingFake(singleGetInvocations, true, sinon.getBufferForBigInt(0n)),
+
+                    sinon.getMatchingFake(resolverInvocations, true, '0-0', expectedOptions),
+                    sinon.getMatchingFake(createStreamInvocations, true, { gte: 5n, lte: 9n }),
+                    sinon.getMatchingFake(resolverInvocations, true, '1-0', expectedOptions),
+                    sinon.getMatchingFake(singleGetInvocations, true, sinon.getBufferForBigInt(0n)),
+
+                    sinon.getMatchingFake(resolverInvocations, true, '0-0', expectedOptions),
+                    sinon.getMatchingFake(createStreamInvocations, true, { gte: 10n, lte: 14n }),
+                    sinon.getMatchingFake(resolverInvocations, true, '1-0', expectedOptions),
+                    sinon.getMatchingFake(singleGetInvocations, true, sinon.getBufferForBigInt(0n)),
+
+                    sinon.getMatchingFake(resolverInvocations, true, '0-0', expectedOptions),
+                    sinon.getMatchingFake(createStreamInvocations, true, { gte: 15n, lte: 19n }),
+                    sinon.getMatchingFake(resolverInvocations, true, '1-0', expectedOptions),
+                    sinon.getMatchingFake(singleGetInvocations, true, sinon.getBufferForBigInt(0n)),
+
+                    sinon.getMatchingFake(resolverInvocations, true, '0-0', expectedOptions),
+                    sinon.getMatchingFake(createStreamInvocations, true, { gte: 20n, lte: 24n }),
+                    sinon.getMatchingFake(resolverInvocations, true, '1-0', expectedOptions),
+                    sinon.getMatchingFake(singleGetInvocations, true, sinon.getBufferForBigInt(0n)),
+
+                    sinon.getMatchingFake(resolverInvocations, true, '0-1', expectedOptions),
+                    sinon.getMatchingFake(createStreamInvocations, true, { gte: 0n, lte: 4n }),
+                    sinon.getMatchingFake(resolverInvocations, true, '1-1', expectedOptions),
+                    sinon.getMatchingFake(singleGetInvocations, true, sinon.getBufferForBigInt(0n)),
+                );
+                sinon.assert.callCount(dataCallBack, 36);
+                let callbackInvocations = dataCallBack.getCalls();
+                sinon.assert.fakeCallOrder(
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 0n], [dimensionNameY, 0n]]), 0n, 0, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 1n], [dimensionNameY, 0n]]), 1n, 0, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 2n], [dimensionNameY, 0n]]), 2n, 0, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 3n], [dimensionNameY, 0n]]), 3n, 0, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 4n], [dimensionNameY, 0n]]), 4n, 0, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 5n], [dimensionNameY, 0n]]), 0n, 1, 12),
+
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 0n], [dimensionNameY, 1n]]), 5n, 2, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 1n], [dimensionNameY, 1n]]), 6n, 2, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 2n], [dimensionNameY, 1n]]), 7n, 2, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 3n], [dimensionNameY, 1n]]), 8n, 2, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 4n], [dimensionNameY, 1n]]), 9n, 2, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 5n], [dimensionNameY, 1n]]), 5n, 3, 12),
+
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 0n], [dimensionNameY, 2n]]), 10n, 4, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 1n], [dimensionNameY, 2n]]), 11n, 4, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 2n], [dimensionNameY, 2n]]), 12n, 4, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 3n], [dimensionNameY, 2n]]), 13n, 4, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 4n], [dimensionNameY, 2n]]), 14n, 4, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 5n], [dimensionNameY, 2n]]), 10n, 5, 12),
+
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 0n], [dimensionNameY, 3n]]), 15n, 6, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 1n], [dimensionNameY, 3n]]), 16n, 6, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 2n], [dimensionNameY, 3n]]), 17n, 6, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 3n], [dimensionNameY, 3n]]), 18n, 6, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 4n], [dimensionNameY, 3n]]), 19n, 6, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 5n], [dimensionNameY, 3n]]), 15n, 7, 12),
+
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 0n], [dimensionNameY, 4n]]), 20n, 8, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 1n], [dimensionNameY, 4n]]), 21n, 8, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 2n], [dimensionNameY, 4n]]), 22n, 8, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 3n], [dimensionNameY, 4n]]), 23n, 8, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 4n], [dimensionNameY, 4n]]), 24n, 8, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 5n], [dimensionNameY, 4n]]), 20n, 9, 12),
+
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 0n], [dimensionNameY, 5n]]), 0n, 10, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 1n], [dimensionNameY, 5n]]), 1n, 10, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 2n], [dimensionNameY, 5n]]), 2n, 10, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 3n], [dimensionNameY, 5n]]), 3n, 10, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 4n], [dimensionNameY, 5n]]), 4n, 10, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 5n], [dimensionNameY, 5n]]), 0n, 11, 12)
+
+                );
+                assert.equal(callbackInvocations.length, 0);
+            });
+
+            it('should resolve to correct address for entire section for un-sorted read', async function () {
+                //Setup
+                const dimensionNameX = 'X'; 1
+                const dimensionNameY = 'Y';
+                const partitionSizeOfDimension = 5;
+                const X = 0n;
+                const Y = 0n;
+                const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
+                const expectedPartitionKey = `${(X / BigInt(partitionSizeOfDimension)).toString()}-${(Y / BigInt(partitionSizeOfDimension)).toString()}`;
+                const expectedOptions = { keyEncoding: 'binary', valueEncoding: 'json' };
+                const dataCallBack = sinon.fake.resolves();
+
+                //Invoke
+                await Matrix.rangeRead(new Map([[dimensionNameX, X], [dimensionNameY, Y]]), new Map([[dimensionNameX, partitionSizeOfDimension - 1], [dimensionNameY, partitionSizeOfDimension - 1]]), dataCallBack, false);
 
                 //Expectations
                 sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
@@ -1040,250 +1088,106 @@ describe('level-matrix', function () {
                 sinon.assert.match(dataCallBack.lastCall.args, [new Map([[dimensionNameX, BigInt(partitionSizeOfDimension - 1)], [dimensionNameY, BigInt(partitionSizeOfDimension - 1)]]), 24n, 0, 1]);
             });
 
-            // it('should resolve to correct address for right edge of the section for sorted read', async function () {
-            //     //Setup
-            //     const dimensionNameX = 'X'; 1
-            //     const dimensionNameY = 'Y';
-            //     const partitionSizeOfDimension = 5;
-            //     const X = 4n;
-            //     const Y = 4n;
-            //     const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
-            //     const expectedPartitionKey = `${(X / BigInt(partitionSizeOfDimension)).toString()}-${(Y / BigInt(partitionSizeOfDimension)).toString()}`;
-            //     const expectedOptions = { keyEncoding: 'binary', valueEncoding: 'json' };
-            //     const expectedKeyBuffer = Buffer.allocUnsafe(8);
-            //     const relativeAddX = BigInt(X) - ((X / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
-            //     const relativeAddY = BigInt(Y) - ((Y / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
-            //     expectedKeyBuffer.writeBigInt64BE((BigInt(partitionSizeOfDimension) * relativeAddY) + relativeAddX, 0);
-            //     const selfClosingStream = (time) => {
-            //         return () => {
-            //             const mockedStream = new stream.PassThrough();
-            //             setTimeout(() => mockedStream.destroy(), time);
-            //             return mockedStream;
-            //         }
-            //     }
-            //     mockDbInstance.createReadStream = sinon.fake(selfClosingStream(5));
-            //     mockDbInstance.get = sinon.fake((key, callback) => callback(undefined, undefined));
-            //     const dataCallBack = sinon.fake.resolves();
+            it('should resolve to correct address for across section for un-sorted read', async function () {
+                //Setup
+                const dimensionNameX = 'X'; 1
+                const dimensionNameY = 'Y';
+                const partitionSizeOfDimension = 5;
+                const X = 0n;
+                const Y = 0n;
+                const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
+                const expectedOptions = { keyEncoding: 'binary', valueEncoding: 'json' };
+                const dataCallBack = sinon.fake.resolves();
 
-            //     //Invoke
-            //     await Matrix.rangeRead(new Map([[dimensionNameX, X], [dimensionNameY, Y]]), new Map([[dimensionNameX, X], [dimensionNameY, Y]]), dataCallBack, true);
+                //Invoke
+                await Matrix.rangeRead(new Map([[dimensionNameX, X], [dimensionNameY, Y]]), new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]), dataCallBack, false);
 
-            //     //Expectations
-            //     sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
-            //     sinon.assert.calledOnceWithMatch(mockDbInstance.get, expectedKeyBuffer);
-            //     sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), undefined, 0, 1);
+                //Expectations
+                sinon.assert.callCount(mockResolver, 12);
+                sinon.assert.callCount(mockDbInstance.createReadStream, 6);
+                sinon.assert.callCount(mockDbInstance.get, 6);
+                let resolverInvocations = mockResolver.getCalls();
+                let createStreamInvocations = mockDbInstance.createReadStream.getCalls();
+                let singleGetInvocations = mockDbInstance.get.getCalls();
+                sinon.assert.fakeCallOrder(
+                    sinon.getMatchingFake(resolverInvocations, true, '0-0', expectedOptions),
+                    sinon.getMatchingFake(createStreamInvocations, true, { gte: 0n, lte: 4n }),
+                    sinon.getMatchingFake(resolverInvocations, true, '1-0', expectedOptions),
+                    sinon.getMatchingFake(singleGetInvocations, true, sinon.getBufferForBigInt(0n)),
 
-            // });
+                    sinon.getMatchingFake(resolverInvocations, true, '0-0', expectedOptions),
+                    sinon.getMatchingFake(createStreamInvocations, true, { gte: 5n, lte: 9n }),
+                    sinon.getMatchingFake(resolverInvocations, true, '1-0', expectedOptions),
+                    sinon.getMatchingFake(singleGetInvocations, true, sinon.getBufferForBigInt(0n)),
 
-            // it('should resolve to correct address for middle part of the section for sorted read', async function () {
-            //     //Setup
-            //     const dimensionNameX = 'X'; 1
-            //     const dimensionNameY = 'Y';
-            //     const partitionSizeOfDimension = 5;
-            //     const X = 2n;
-            //     const Y = 2n;
-            //     const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
-            //     const expectedPartitionKey = `${(X / BigInt(partitionSizeOfDimension)).toString()}-${(Y / BigInt(partitionSizeOfDimension)).toString()}`;
-            //     const expectedOptions = { keyEncoding: 'binary', valueEncoding: 'json' };
-            //     const expectedKeyBuffer = Buffer.allocUnsafe(8);
-            //     const relativeAddX = BigInt(X) - ((X / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
-            //     const relativeAddY = BigInt(Y) - ((Y / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
-            //     expectedKeyBuffer.writeBigInt64BE((BigInt(partitionSizeOfDimension) * relativeAddY) + relativeAddX, 0);
-            //     const selfClosingStream = (time) => {
-            //         return () => {
-            //             const mockedStream = new stream.PassThrough();
-            //             setTimeout(() => mockedStream.destroy(), time);
-            //             return mockedStream;
-            //         }
-            //     }
-            //     mockDbInstance.createReadStream = sinon.fake(selfClosingStream(5));
-            //     mockDbInstance.get = sinon.fake((key, callback) => callback(undefined, undefined));
-            //     const dataCallBack = sinon.fake.resolves();
+                    sinon.getMatchingFake(resolverInvocations, true, '0-0', expectedOptions),
+                    sinon.getMatchingFake(createStreamInvocations, true, { gte: 10n, lte: 14n }),
+                    sinon.getMatchingFake(resolverInvocations, true, '1-0', expectedOptions),
+                    sinon.getMatchingFake(singleGetInvocations, true, sinon.getBufferForBigInt(0n)),
 
-            //     //Invoke
-            //     await Matrix.rangeRead(new Map([[dimensionNameX, X], [dimensionNameY, Y]]), new Map([[dimensionNameX, X], [dimensionNameY, Y]]), dataCallBack, true);
+                    sinon.getMatchingFake(resolverInvocations, true, '0-0', expectedOptions),
+                    sinon.getMatchingFake(createStreamInvocations, true, { gte: 15n, lte: 19n }),
+                    sinon.getMatchingFake(resolverInvocations, true, '1-0', expectedOptions),
+                    sinon.getMatchingFake(singleGetInvocations, true, sinon.getBufferForBigInt(0n)),
 
-            //     //Expectations
-            //     sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
-            //     sinon.assert.calledOnceWithMatch(mockDbInstance.get, expectedKeyBuffer);
-            //     sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), undefined, 0, 1);
+                    sinon.getMatchingFake(resolverInvocations, true, '0-0', expectedOptions),
+                    sinon.getMatchingFake(createStreamInvocations, true, { gte: 20n, lte: 24n }),
+                    sinon.getMatchingFake(resolverInvocations, true, '1-0', expectedOptions),
+                    sinon.getMatchingFake(singleGetInvocations, true, sinon.getBufferForBigInt(0n)),
 
-            // });
+                    sinon.getMatchingFake(resolverInvocations, true, '0-1', expectedOptions),
+                    sinon.getMatchingFake(createStreamInvocations, true, { gte: 0n, lte: 4n }),
+                    sinon.getMatchingFake(resolverInvocations, true, '1-1', expectedOptions),
+                    sinon.getMatchingFake(singleGetInvocations, true, sinon.getBufferForBigInt(0n)),
+                );
+                sinon.assert.callCount(dataCallBack, 36);
+                let callbackInvocations = dataCallBack.getCalls();
+                sinon.assert.fakeCallOrder(
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 0n], [dimensionNameY, 0n]]), 0n, 0, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 1n], [dimensionNameY, 0n]]), 1n, 0, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 2n], [dimensionNameY, 0n]]), 2n, 0, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 3n], [dimensionNameY, 0n]]), 3n, 0, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 4n], [dimensionNameY, 0n]]), 4n, 0, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 5n], [dimensionNameY, 0n]]), 0n, 1, 12),
 
-            // it('should resolve to correct address for next section for sorted read', async function () {
-            //     //Setup
-            //     const dimensionNameX = 'X'; 1
-            //     const dimensionNameY = 'Y';
-            //     const partitionSizeOfDimension = 5;
-            //     const X = 5n;
-            //     const Y = 5n;
-            //     const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
-            //     const expectedPartitionKey = `${(X / BigInt(partitionSizeOfDimension)).toString()}-${(Y / BigInt(partitionSizeOfDimension)).toString()}`;
-            //     const expectedOptions = { keyEncoding: 'binary', valueEncoding: 'json' };
-            //     const expectedKeyBuffer = Buffer.allocUnsafe(8);
-            //     const relativeAddX = BigInt(X) - ((X / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
-            //     const relativeAddY = BigInt(Y) - ((Y / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
-            //     expectedKeyBuffer.writeBigInt64BE((BigInt(partitionSizeOfDimension) * relativeAddY) + relativeAddX, 0);
-            //     const selfClosingStream = (time) => {
-            //         return () => {
-            //             const mockedStream = new stream.PassThrough();
-            //             setTimeout(() => mockedStream.destroy(), time);
-            //             return mockedStream;
-            //         }
-            //     }
-            //     mockDbInstance.createReadStream = sinon.fake(selfClosingStream(5));
-            //     mockDbInstance.get = sinon.fake((key, callback) => callback(undefined, undefined));
-            //     const dataCallBack = sinon.fake.resolves();
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 0n], [dimensionNameY, 1n]]), 5n, 2, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 1n], [dimensionNameY, 1n]]), 6n, 2, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 2n], [dimensionNameY, 1n]]), 7n, 2, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 3n], [dimensionNameY, 1n]]), 8n, 2, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 4n], [dimensionNameY, 1n]]), 9n, 2, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 5n], [dimensionNameY, 1n]]), 5n, 3, 12),
 
-            //     //Invoke
-            //     await Matrix.rangeRead(new Map([[dimensionNameX, X], [dimensionNameY, Y]]), new Map([[dimensionNameX, X], [dimensionNameY, Y]]), dataCallBack, true);
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 0n], [dimensionNameY, 2n]]), 10n, 4, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 1n], [dimensionNameY, 2n]]), 11n, 4, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 2n], [dimensionNameY, 2n]]), 12n, 4, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 3n], [dimensionNameY, 2n]]), 13n, 4, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 4n], [dimensionNameY, 2n]]), 14n, 4, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 5n], [dimensionNameY, 2n]]), 10n, 5, 12),
 
-            //     //Expectations
-            //     sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
-            //     sinon.assert.calledOnceWithMatch(mockDbInstance.get, expectedKeyBuffer);
-            //     sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), undefined, 0, 1);
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 0n], [dimensionNameY, 3n]]), 15n, 6, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 1n], [dimensionNameY, 3n]]), 16n, 6, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 2n], [dimensionNameY, 3n]]), 17n, 6, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 3n], [dimensionNameY, 3n]]), 18n, 6, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 4n], [dimensionNameY, 3n]]), 19n, 6, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 5n], [dimensionNameY, 3n]]), 15n, 7, 12),
 
-            // });
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 0n], [dimensionNameY, 4n]]), 20n, 8, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 1n], [dimensionNameY, 4n]]), 21n, 8, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 2n], [dimensionNameY, 4n]]), 22n, 8, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 3n], [dimensionNameY, 4n]]), 23n, 8, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 4n], [dimensionNameY, 4n]]), 24n, 8, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 5n], [dimensionNameY, 4n]]), 20n, 9, 12),
 
-            // it('should resolve to correct address for left edge of the section for unsorted read', async function () {
-            //     //Setup
-            //     const dimensionNameX = 'X'; 1
-            //     const dimensionNameY = 'Y';
-            //     const partitionSizeOfDimension = 5;
-            //     const X = 0n;
-            //     const Y = 0n;
-            //     const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
-            //     const expectedPartitionKey = `${(X / BigInt(partitionSizeOfDimension)).toString()}-${(Y / BigInt(partitionSizeOfDimension)).toString()}`;
-            //     const expectedOptions = { keyEncoding: 'binary', valueEncoding: 'json' };
-            //     const expectedKeyBuffer = Buffer.allocUnsafe(8);
-            //     const relativeAddX = BigInt(X) - ((X / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
-            //     const relativeAddY = BigInt(Y) - ((Y / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
-            //     expectedKeyBuffer.writeBigInt64BE((BigInt(partitionSizeOfDimension) * relativeAddY) + relativeAddX, 0);
-            //     const selfClosingStream = (time) => {
-            //         return () => {
-            //             const mockedStream = new stream.PassThrough();
-            //             setTimeout(() => mockedStream.destroy(), time);
-            //             return mockedStream;
-            //         }
-            //     }
-            //     mockDbInstance.createReadStream = sinon.fake(selfClosingStream(5));
-            //     mockDbInstance.get = sinon.fake((key, callback) => callback(undefined, undefined));
-            //     const dataCallBack = sinon.fake.resolves();
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 0n], [dimensionNameY, 5n]]), 0n, 10, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 1n], [dimensionNameY, 5n]]), 1n, 10, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 2n], [dimensionNameY, 5n]]), 2n, 10, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 3n], [dimensionNameY, 5n]]), 3n, 10, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 4n], [dimensionNameY, 5n]]), 4n, 10, 12),
+                    sinon.getMatchingFake(callbackInvocations, true, new Map([[dimensionNameX, 5n], [dimensionNameY, 5n]]), 0n, 11, 12)
 
-            //     //Invoke
-            //     await Matrix.rangeRead(new Map([[dimensionNameX, X], [dimensionNameY, Y]]), new Map([[dimensionNameX, X], [dimensionNameY, Y]]), dataCallBack, false);
-
-            //     //Expectations
-            //     sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
-            //     sinon.assert.calledOnceWithMatch(mockDbInstance.get, expectedKeyBuffer);
-            //     sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), undefined, 0, 1);
-
-            // });
-
-            // it('should resolve to correct address for right edge of the section for unsorted read', async function () {
-            //     //Setup
-            //     const dimensionNameX = 'X'; 1
-            //     const dimensionNameY = 'Y';
-            //     const partitionSizeOfDimension = 5;
-            //     const X = 4n;
-            //     const Y = 4n;
-            //     const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
-            //     const expectedPartitionKey = `${(X / BigInt(partitionSizeOfDimension)).toString()}-${(Y / BigInt(partitionSizeOfDimension)).toString()}`;
-            //     const expectedOptions = { keyEncoding: 'binary', valueEncoding: 'json' };
-            //     const expectedKeyBuffer = Buffer.allocUnsafe(8);
-            //     const relativeAddX = BigInt(X) - ((X / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
-            //     const relativeAddY = BigInt(Y) - ((Y / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
-            //     expectedKeyBuffer.writeBigInt64BE((BigInt(partitionSizeOfDimension) * relativeAddY) + relativeAddX, 0);
-            //     const selfClosingStream = (time) => {
-            //         return () => {
-            //             const mockedStream = new stream.PassThrough();
-            //             setTimeout(() => mockedStream.destroy(), time);
-            //             return mockedStream;
-            //         }
-            //     }
-            //     mockDbInstance.createReadStream = sinon.fake(selfClosingStream(5));
-            //     mockDbInstance.get = sinon.fake((key, callback) => callback(undefined, undefined));
-            //     const dataCallBack = sinon.fake.resolves();
-
-            //     //Invoke
-            //     await Matrix.rangeRead(new Map([[dimensionNameX, X], [dimensionNameY, Y]]), new Map([[dimensionNameX, X], [dimensionNameY, Y]]), dataCallBack, false);
-
-            //     //Expectations
-            //     sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
-            //     sinon.assert.calledOnceWithMatch(mockDbInstance.get, expectedKeyBuffer);
-            //     sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), undefined, 0, 1);
-
-            // });
-
-            // it('should resolve to correct address for middle part of the section for unsorted read', async function () {
-            //     //Setup
-            //     const dimensionNameX = 'X'; 1
-            //     const dimensionNameY = 'Y';
-            //     const partitionSizeOfDimension = 5;
-            //     const X = 2n;
-            //     const Y = 2n;
-            //     const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
-            //     const expectedPartitionKey = `${(X / BigInt(partitionSizeOfDimension)).toString()}-${(Y / BigInt(partitionSizeOfDimension)).toString()}`;
-            //     const expectedOptions = { keyEncoding: 'binary', valueEncoding: 'json' };
-            //     const expectedKeyBuffer = Buffer.allocUnsafe(8);
-            //     const relativeAddX = BigInt(X) - ((X / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
-            //     const relativeAddY = BigInt(Y) - ((Y / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
-            //     expectedKeyBuffer.writeBigInt64BE((BigInt(partitionSizeOfDimension) * relativeAddY) + relativeAddX, 0);
-            //     const selfClosingStream = (time) => {
-            //         return () => {
-            //             const mockedStream = new stream.PassThrough();
-            //             setTimeout(() => mockedStream.destroy(), time);
-            //             return mockedStream;
-            //         }
-            //     }
-            //     mockDbInstance.createReadStream = sinon.fake(selfClosingStream(5));
-            //     mockDbInstance.get = sinon.fake((key, callback) => callback(undefined, undefined));
-            //     const dataCallBack = sinon.fake.resolves();
-
-            //     //Invoke
-            //     await Matrix.rangeRead(new Map([[dimensionNameX, X], [dimensionNameY, Y]]), new Map([[dimensionNameX, X], [dimensionNameY, Y]]), dataCallBack, false);
-
-            //     //Expectations
-            //     sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
-            //     sinon.assert.calledOnceWithMatch(mockDbInstance.get, expectedKeyBuffer);
-            //     sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), undefined, 0, 1);
-
-            // });
-
-            // it('should resolve to correct address for next section for unsorted read', async function () {
-            //     //Setup
-            //     const dimensionNameX = 'X'; 1
-            //     const dimensionNameY = 'Y';
-            //     const partitionSizeOfDimension = 5;
-            //     const X = 5n;
-            //     const Y = 5n;
-            //     const Matrix = new matrixType(mockResolver, new Map([[dimensionNameX, partitionSizeOfDimension], [dimensionNameY, partitionSizeOfDimension]]));
-            //     const expectedPartitionKey = `${(X / BigInt(partitionSizeOfDimension)).toString()}-${(Y / BigInt(partitionSizeOfDimension)).toString()}`;
-            //     const expectedOptions = { keyEncoding: 'binary', valueEncoding: 'json' };
-            //     const expectedKeyBuffer = Buffer.allocUnsafe(8);
-            //     const relativeAddX = BigInt(X) - ((X / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
-            //     const relativeAddY = BigInt(Y) - ((Y / BigInt(partitionSizeOfDimension)) * BigInt(partitionSizeOfDimension));
-            //     expectedKeyBuffer.writeBigInt64BE((BigInt(partitionSizeOfDimension) * relativeAddY) + relativeAddX, 0);
-            //     const selfClosingStream = (time) => {
-            //         return () => {
-            //             const mockedStream = new stream.PassThrough();
-            //             setTimeout(() => mockedStream.destroy(), time);
-            //             return mockedStream;
-            //         }
-            //     }
-            //     mockDbInstance.createReadStream = sinon.fake(selfClosingStream(5));
-            //     mockDbInstance.get = sinon.fake((key, callback) => callback(undefined, undefined));
-            //     const dataCallBack = sinon.fake.resolves();
-
-            //     //Invoke
-            //     await Matrix.rangeRead(new Map([[dimensionNameX, X], [dimensionNameY, Y]]), new Map([[dimensionNameX, X], [dimensionNameY, Y]]), dataCallBack, false);
-
-            //     //Expectations
-            //     sinon.assert.calledOnceWithExactly(mockResolver, expectedPartitionKey, expectedOptions);
-            //     sinon.assert.calledOnceWithMatch(mockDbInstance.get, expectedKeyBuffer);
-            //     sinon.assert.calledOnceWithExactly(dataCallBack, new Map([[dimensionNameX, X], [dimensionNameY, Y]]), undefined, 0, 1);
-
-            // });
+                );
+                assert.equal(callbackInvocations.length, 0);
+            });
         });
     });
 
